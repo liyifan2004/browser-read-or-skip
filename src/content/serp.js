@@ -139,6 +139,23 @@
     return "";
   }
 
+  /**
+   * 只排除"搜索引擎自己的页面"。
+   * 不能用 /(baidu)\./ 这种宽松匹配：那会把 baijiahao.baidu.com、zhidao.baidu.com
+   * 这些真内容站一起干掉——而它们恰恰是最需要打上可信度等级的结果。
+   */
+  const ENGINE_OWN_HOST = /^(?:www\.)?(?:google\.[a-z.]{2,10}|bing\.com|baidu\.com|duckduckgo\.com|sogou\.com|search\.brave\.com)$/i;
+
+  function isEngineOwnLink(href) {
+    try {
+      const h = new URL(href).hostname;
+      if (ENGINE_OWN_HOST.test(h)) return true;
+      return h === location.hostname;
+    } catch (e) {
+      return true;
+    }
+  }
+
   function pickLink(node) {
     let a = null;
     try {
@@ -147,12 +164,7 @@
     if (!a) return null;
     const href = a.href;
     if (!href || !/^https?:/.test(href)) return null;
-    try {
-      const h = new URL(href).hostname;
-      if (/(^|\.)(google|bing|baidu|duckduckgo|sogou)\./.test(h)) return null;
-    } catch (e) {
-      return null;
-    }
+    if (isEngineOwnLink(href)) return null;
     return { href, anchor: a };
   }
 

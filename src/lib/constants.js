@@ -98,7 +98,7 @@
     "openai.com", "anthropic.com", "deepmind.google", "research.google", "microsoft.com",
     "apple.com", "cloudflare.com", "vercel.com", "typesafe.ai", "huggingface.co", "pytorch.org",
     "tensorflow.org", "npmjs.com", "pypi.org", "docs.rs", "spring.io", "postgresql.org",
-    "统计公报", "gov.cn", "edu.cn"
+    "gov.cn", "edu.cn"
   ];
 
   RS.TRUST_LOW = [

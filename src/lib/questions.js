@@ -67,7 +67,7 @@
       novelty: {
         type: "score",
         instructions:
-          "How much NEW information does this page give to a reader who already follows the focus topics? " +
+          "How much NEW information does this page give to a reader who already follows the focus topics (" + topics + ")? " +
           "Ignore whether the writing is pleasant; judge only the amount of new substance.",
         criteria: NOVELTY_CRITERIA
       },

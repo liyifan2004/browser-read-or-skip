@@ -32,6 +32,7 @@
     navGuard: 0,
     busy: false,
     localElapsed: 0,
+    skipped: null,
     bootAt: performance.now()
   };
 
@@ -191,15 +192,39 @@
     warn: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>'
   };
 
+  /**
+   * 结果页交给 serp.js 打等级，浮层让位，避免同一屏两套标注打架。
+   * 但标注功能关掉时必须自己顶上，否则用户两边都得不到结论。
+   */
+  function looksLikeSearchResultsPage() {
+    if (!S.settings || !S.settings.annotateSerp) return false;
+    return RS.heuristics.isSearchResultsPage(location.href);
+  }
+
   /* ================= 启动 ================= */
 
   init().catch(() => {});
 
   async function init() {
     S.settings = await RS.storage.getSettings();
-    if (!S.settings.enabled || !S.settings.showHud) return;
-    if (RS.heuristics.isBlocked(location.href, S.settings)) return;
-    if (!RS.heuristics.isReadablePage()) return;
+    // 每种"不出浮层"的原因都要留下记号：弹出面板用 skipped 告诉用户为什么没动静，
+    // 否则用户只会看到"什么都没发生"。
+    if (!S.settings.enabled || !S.settings.showHud) {
+      S.skipped = "off";
+      return;
+    }
+    if (RS.heuristics.isBlocked(location.href, S.settings)) {
+      S.skipped = "blocked";
+      return;
+    }
+    if (looksLikeSearchResultsPage()) {
+      S.skipped = "serp";
+      return;
+    }
+    if (!RS.heuristics.isReadablePage()) {
+      S.skipped = "not-readable";
+      return;
+    }
 
     RS.storage.onSettingsChanged((next) => {
       const wasOn = S.settings && S.settings.showHud;
@@ -663,10 +688,17 @@
   }
 
   async function onNavigate() {
-    if (RS.heuristics.isBlocked(location.href, S.settings)) {
+    if (looksLikeSearchResultsPage()) {
+      S.skipped = "serp";
       hide(true);
       return;
     }
+    if (RS.heuristics.isBlocked(location.href, S.settings)) {
+      S.skipped = "blocked";
+      hide(true);
+      return;
+    }
+    S.skipped = null;
     S.page = null;
     S.result = null;
     clearTimeout(S.navGuard);
@@ -680,6 +712,7 @@
         if (!S.result || (S.result.kind === "serp")) {
           S.result = RS.heuristics.scorePage(S.page, S.settings);
         }
+        show();
         render();
         expand(true);
         evaluate(true);

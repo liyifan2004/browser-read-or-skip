@@ -91,12 +91,16 @@ async function handleEvaluate(payload) {
   const page = payload && payload.page;
   if (!page || !page.url) return { ok: false, error: { code: "NO_PAGE", message: "缺少页面数据。" } };
 
-  const cached = await RS.storage.getCacheEntry(page.url, settings);
-  if (cached && cached.result && !cached.partial) {
-    return { ok: true, result: Object.assign({}, cached.result, { source: "cache" }), from: "cache" };
+  // force 由界面上的「重新评估」触发：必须绕过缓存真的重新问一次模型，
+  // 否则用户点了按钮却看到完全一样的结论，会以为坏了。
+  if (!(payload && payload.force)) {
+    const cached = await RS.storage.getCacheEntry(page.url, settings);
+    if (cached && cached.result && !cached.partial) {
+      return { ok: true, result: Object.assign({}, cached.result, { source: "cache" }), from: "cache" };
+    }
   }
 
-  const state = payload.state || RS.extractStateFallback(page, settings);
+  const state = payload.state || extractStateFallback(page, settings);
   const questions = RS.questions.pageQuestions(settings);
   const t0 = Date.now();
 
@@ -165,11 +169,15 @@ async function handleSerp(payload) {
 
   const settled = await pool(list, 5, async (item) => {
     const cached = await RS.storage.getCacheEntry(item.url, settings);
-    if (cached && cached.result && cached.result.kind === "serp") return cached.result;
+    if (cached && cached.result && cached.result.kind === "serp") {
+      // 带上来源标记：命中旧的预判结果不能算成一次新的 API 调用，
+      // 否则翻回上一页会凭空多出一堆调用次数和 token。
+      return { result: cached.result, fromCache: true };
+    }
 
     const state = {
       url: item.url,
-      domain: RS.heuristicsDomain(item.url),
+      domain: domainOf(item.url),
       title: item.title,
       snippet: (item.snippet || "").slice(0, 400),
       engine: payload.engine || "",
@@ -188,7 +196,7 @@ async function handleSerp(payload) {
       usage: resp.usage
     });
     await RS.storage.putCacheEntry(item.url, result, { title: item.title });
-    return result;
+    return { result, fromCache: false };
   });
 
   let calls = 0;
@@ -199,17 +207,20 @@ async function handleSerp(payload) {
 
   settled.forEach((s, i) => {
     const item = list[i];
-    if (s.ok) {
-      results[item.url] = s.value;
-      if (s.value && s.value.source === "jev") {
-        calls++;
-        if (s.value.usage) {
-          inTok += s.value.usage.input_tokens || 0;
-          outTok += s.value.usage.output_tokens || 0;
-        }
+    if (!s.ok) {
+      if (!firstError) firstError = s.error;
+      return;
+    }
+    const payloadValue = s.value && s.value.result ? s.value : { result: s.value, fromCache: false };
+    const value = payloadValue.result;
+    if (!value) return;
+    results[item.url] = value;
+    if (!payloadValue.fromCache) {
+      calls++;
+      if (value.usage) {
+        inTok += value.usage.input_tokens || 0;
+        outTok += value.usage.output_tokens || 0;
       }
-    } else if (!firstError) {
-      firstError = s.error;
     }
   });
 
@@ -225,7 +236,7 @@ async function handleSerp(payload) {
   };
 }
 
-function RS_heuristicsDomain(url) {
+function domainOf(url) {
   try {
     return new URL(url).hostname.replace(/^www\./, "");
   } catch (e) {

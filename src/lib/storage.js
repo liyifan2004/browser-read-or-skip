@@ -98,23 +98,43 @@
     return entry;
   }
 
-  async function putCacheEntry(url, result, extra) {
-    if (!result) return;
-    const key = urlKey(url);
-    const map = await getCacheMap();
-    const prev = map[key];
-    // 预判结果不得覆盖已有的完整评估
-    if (prev && prev.result && !prev.partial && result.partial) return;
-    map[key] = Object.assign(
-      {
-        at: Date.now(),
-        title: (extra && extra.title) || "",
-        partial: !!result.partial
-      },
-      { result }
+  /**
+   * 缓存写入串行化。
+   *
+   * putCacheEntry 是「读整张 map → 改一条 → 写回」，而搜索结果页是并发 5 路一起评估的：
+   * 多个协程各自读到同一份旧 map、各自写回，后写的会盖掉先写的，
+   * 结果是部分结果悄悄没进缓存 —— 点进去时"秒出结论"就时灵时不灵。
+   */
+  let cacheWriteChain = Promise.resolve();
+
+  function withCacheWriteLock(fn) {
+    const run = cacheWriteChain.then(fn, fn);
+    cacheWriteChain = run.then(
+      () => undefined,
+      () => undefined
     );
-    await trimCache(map);
-    await rawSet(SK.CACHE, map);
+    return run;
+  }
+
+  function putCacheEntry(url, result, extra) {
+    if (!result) return Promise.resolve();
+    return withCacheWriteLock(async () => {
+      const key = urlKey(url);
+      const map = await getCacheMap();
+      const prev = map[key];
+      // 预判结果不得覆盖已有的完整评估
+      if (prev && prev.result && !prev.partial && result.partial) return;
+      map[key] = Object.assign(
+        {
+          at: Date.now(),
+          title: (extra && extra.title) || "",
+          partial: !!result.partial
+        },
+        { result }
+      );
+      await trimCache(map);
+      await rawSet(SK.CACHE, map);
+    });
   }
 
   async function trimCache(map) {
@@ -129,7 +149,7 @@
   }
 
   async function clearCache() {
-    await rawSet(SK.CACHE, {});
+    await withCacheWriteLock(() => rawSet(SK.CACHE, {}));
   }
 
   async function cacheStats() {
@@ -153,7 +173,8 @@
     cur.inputTokens = (cur.inputTokens || 0) + (patch.inputTokens || 0);
     cur.outputTokens = (cur.outputTokens || 0) + (patch.outputTokens || 0);
     cur.pages = (cur.pages || 0) + (patch.pages || 0);
-    if (patch.verdict && cur.verdicts) {
+    // 只统计已知判定，避免上游传进意外值把统计结构撑出无名键
+    if (patch.verdict && cur.verdicts && RS.VERDICT_ORDER.includes(patch.verdict)) {
       cur.verdicts[patch.verdict] = (cur.verdicts[patch.verdict] || 0) + 1;
     }
     cur.lastAt = Date.now();

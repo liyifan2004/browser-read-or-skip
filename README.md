@@ -131,19 +131,64 @@ tools/
   make_icons.py            生成 PNG 图标（纯标准库）
   test_jev.mjs             用真实 API 跑三个场景，验证问法与映射
   bench_latency.mjs        输入长度对延迟的影响
+tests/
+  run.mjs                  零依赖测试运行器
+  harness/                 jsdom 环境 + chrome API 模拟 + 断言库
+  cases/                   10 个套件 / 218 个用例
 ```
 
 ## 开发与自测
 
 ```bash
+npm install                  # 只装一个开发依赖 jsdom；扩展本身零依赖、无构建步骤
+npm test                     # 全部 218 个用例，约 13 秒
+npm test -- heuristics       # 只跑名字里带 heuristics 的套件
+npm test -- 并发              # 也可以按中文用例名过滤
+```
+
+```bash
 # 用真实 API 验证判定质量（会打印 Jev 的原始 answers）
 node tools/test_jev.mjs
 
-# 输入长度与延迟关系
+# 输入长度对延迟的影响
 node tools/bench_latency.mjs
 ```
 
-改了 `src/lib/` 下的内容脚本或 service worker 后，需要在 `chrome://extensions` 里点一次扩展的刷新按钮，再刷新目标网页。
+测试是零运行时依赖的：`tests/harness/` 自己实现了断言库、用例注册表、chrome API 模拟，
+用 jsdom 造真实 DOM（含 Shadow DOM、MutationObserver、rAF），
+再把 `manifest.json` 里声明的脚本**按原样、按原顺序**注入 ——
+测到的就是浏览器真正会加载的那份代码，不是复制品。
+
+| 套件 | 覆盖 |
+| --- | --- |
+| `01-manifest` | 引用的文件都存在、图标是真 PNG、注入顺序、权限与代码用到的 API 对得上 |
+| `02-heuristics` | 域名可信度分层、路径信号、主题重合度、scorePage 的每条判定分支 |
+| `03-jev` | 三种原语的解析、请求构造、401/422/429/529/超时/网络错误的分类与重试 |
+| `04-questions` | 8 个问题的结构、答案到界面字段的映射、理由文案的每个分支 |
+| `05-storage` | URL 归一化去跟踪参数、缓存 TTL、LRU、预判不覆盖完整评估、并发写入 |
+| `06-extract` | 正文去噪、主节点选择、链接密度、隐私模式与截断 |
+| `07-serp` | 6 个引擎的识别、徽章插入位置、站内链接过滤、汇总统计、失败降级 |
+| `08-hud` | 挂载条件与每种「不弹」的原因、两阶段升级、收起/快捷键、错误提示 |
+| `09-service-worker` | 消息路由、缓存与 force、并发池上限、徽章、快捷键转发、安装流程 |
+| `10-pages` | 弹窗与设置页的表单、主题标签、保存与夹紧、连接自测 |
+
+### 测试抓到的真实缺陷
+
+第一轮 39 个用例挂了 27 个，其中几个会让扩展完全不可用：
+
+1. `heuristics.js` 导出了未定义的 `isSearchResultsPage` —— 加载即抛 `ReferenceError`，
+   整条内容脚本链断掉，浮层**静默不出现**（异常被 `init().catch(() => {})` 吞掉）。
+   这是最坏的一类：用户只看到「什么都没发生」。
+2. service worker 把局部函数当成模块导出调用（`RS.extractStateFallback`、`RS.heuristicsDomain`）——
+   搜索结果标注**从未成功过一次**，每一条结果都在后台抛异常。
+3. `force: true` 没有被后台采纳 —— 点「重新评估」只是把缓存又原样吐一遍。
+4. 搜索结果命中缓存时被当成新调用计入统计 —— 翻回上一页会凭空多出调用次数和 token。
+5. 缓存写入没有串行化 —— 并发 5 路评估互相覆盖写，部分结果丢掉，
+   导致「点进结果秒出结论」时灵时不灵。
+6. `serp.js` 用 `/(baidu)\./` 这种宽松匹配过滤站内链接，把 `baijiahao.baidu.com`
+   这类真内容站一起干掉 —— 而它们恰恰是最需要标可信度的结果。
+
+改了 `src/lib/` 或后台代码后，需要在 `chrome://extensions` 里点一次扩展的刷新按钮，再刷新目标网页。
 
 ## 隐私
 

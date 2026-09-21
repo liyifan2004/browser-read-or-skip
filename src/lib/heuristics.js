@@ -72,36 +72,83 @@
     return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   }
 
+  /** 把「AI / 大模型」这类主题拆成可比的词；连字符保留（gpt-4 是一个词） */
+  function termsOf(topic) {
+    const parts = String(topic || "")
+      .toLowerCase()
+      .split(/[\/\s,、|·—]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const keep = parts.filter((p) => p.length >= 2);
+    if (keep.length) return keep;
+    return parts.length ? parts : [];
+  }
+
+  /**
+   * 纯 ASCII 词要卡词边界：否则 "ai" 会命中 "email"、"maintain"。
+   * 中文没有词边界，直接子串匹配。
+   * @param {string} term
+   * @param {boolean} global 需要计数时用 true；需要 .test() 时用 false（避免 lastIndex 状态残留）
+   */
+  function termRegex(term, global = true) {
+    const esc = escapeRe(term);
+    const asciiWord = /^[a-z0-9][a-z0-9\-_.+#]*$/i.test(term);
+    const flags = global ? "gi" : "i";
+    return asciiWord ? new RegExp("(?<![a-z0-9])" + esc + "(?![a-z0-9])", flags) : new RegExp(esc, flags);
+  }
+
+  function countTerm(haystack, term) {
+    const m = haystack.match(termRegex(term, true));
+    return m ? m.length : 0;
+  }
+
+  function hasTerm(haystack, term) {
+    return termRegex(term, false).test(haystack);
+  }
+
+  /**
+   * 主题关键词重合度 → 0~1。
+   *
+   * 关键设计：看「最匹配的那个主题」而不是所有主题的平均。
+   * 用户通常挂着 3~10 个主题，一篇文章只可能命中其中一两个；
+   * 用平均值会让一篇正中靶心的文章只得 35 分，反而被判成"快速扫"。
+   * 命中主题数作为小幅加权（breadth），保证"多个主题都沾边"能略高一点。
+   */
   function topicOverlap(title, text, topics) {
     if (!topics || !topics.length) return null;
-    const hay = ((title || "") + "\n" + (text || "")).toLowerCase();
-    if (!hay.trim()) return null;
-    let hits = 0;
-    let total = 0;
-    for (const t of topics) {
-      const parts = String(t)
-        .toLowerCase()
-        .split(/[\/\s,、|·\-—]+/)
-        .filter((p) => p && p.length >= 2);
-      const terms = parts.length ? parts : [String(t).toLowerCase()];
-      total += terms.length;
+    const titleHay = String(title || "").toLowerCase();
+    const bodyHay = String(text || "").toLowerCase();
+    if (!titleHay.trim() && !bodyHay.trim()) return null;
+    const hay = titleHay + "\n" + bodyHay;
+
+    let best = 0;
+    let matched = 0;
+    let usedTopics = 0;
+
+    for (const raw of topics) {
+      const terms = termsOf(raw);
+      if (!terms.length) continue;
+      usedTopics++;
+
+      let hits = 0;
+      let titleHits = 0;
       for (const term of terms) {
-        const m = hay.match(new RegExp(escapeRe(term), "g"));
-        if (m) hits += Math.min(m.length, 6);
+        hits += Math.min(countTerm(hay, term), 4);
+        if (hasTerm(titleHay, term)) titleHits++;
       }
+
+      const coverage = Math.min(1, hits / (terms.length * 3));
+      const titleBonus = titleHits / terms.length;
+      if (coverage > 0.2) matched++;
+
+      const score = coverage * 0.85 + titleBonus * 0.15;
+      if (score > best) best = score;
     }
-    if (!total) return null;
-    // 标题命中的权重更高
-    const titleHay = (title || "").toLowerCase();
-    let titleHit = 0;
-    for (const t of topics) {
-      const parts = String(t).toLowerCase().split(/[\/\s,、|·\-—]+/).filter((p) => p.length >= 2);
-      for (const term of parts.length ? parts : [String(t).toLowerCase()]) {
-        if (titleHay.includes(term)) titleHit++;
-      }
-    }
-    const base = Math.min(1, hits / (total * 5));
-    return Math.max(0, Math.min(1, base * 0.75 + Math.min(1, titleHit / Math.max(1, topics.length)) * 0.25));
+
+    if (!usedTopics) return null;
+    // 命中越多个主题，越不容易被"只是撞上其中一个"误导，做小幅加权
+    const breadth = matched / usedTopics;
+    return clamp(best * (0.88 + 0.12 * breadth), 0, 1);
   }
 
   /* ---------------- 阅读时长 ---------------- */
@@ -127,6 +174,13 @@
     return list.some((p) => p && lower.includes(String(p).toLowerCase()));
   }
 
+  /** 取元素可见文本长度。不用 innerText 单腿走路：部分文档类型 / 测试环境里它不存在。 */
+  function textLength(el) {
+    if (!el) return 0;
+    const t = el.innerText != null ? el.innerText : el.textContent;
+    return (t || "").length;
+  }
+
   function isReadablePage() {
     try {
       if (!/^https?:$/.test(location.protocol)) return false;
@@ -138,8 +192,35 @@
     }
     // 大量表单 + 密码框 → 应用页，不是文章
     const pw = document.querySelectorAll('input[type="password"]').length;
-    if (pw > 0 && (document.body ? document.body.innerText.length : 0) < 1200) return false;
+    if (pw > 0 && textLength(document.body) < 1200) return false;
     return true;
+  }
+
+  /**
+   * 是否是搜索引擎结果页。
+   * 必须与 manifest.content_scripts[1].matches 保持一致 —— 那边负责注入标注脚本，
+   * 这边负责让浮层让位。两边不一致就会出现"既不标注也不弹浮层"的空窗。
+   */
+  const SEARCH_ENGINE_PATTERNS = [
+    { host: /(^|\.)www\.google\.(com|com\.hk|com\.tw)$/, path: /^\/search/ },
+    { host: /(^|\.)www\.bing\.com$/, path: /^\/search/ },
+    { host: /(^|\.)cn\.bing\.com$/, path: /^\/search/ },
+    { host: /(^|\.)www\.baidu\.com$/, path: /^\/(s|from)/ },
+    { host: /(^|\.)www\.sogou\.com$/, path: /^\/web/ },
+    { host: /(^|\.)duckduckgo\.com$/, path: /^\// },
+    { host: /(^|\.)search\.brave\.com$/, path: /^\/search/ }
+  ];
+
+  function isSearchResultsPage(url) {
+    if (!url) return false;
+    try {
+      const u = new URL(url);
+      const host = u.hostname.toLowerCase();
+      const path = u.pathname;
+      return SEARCH_ENGINE_PATTERNS.some((p) => p.host.test(host) && p.path.test(path));
+    } catch (e) {
+      return false;
+    }
   }
 
   /**
@@ -222,13 +303,22 @@
     }
     if ((page && page.paragraphCount || 0) >= 12) novelty += 4;
 
-    /* --- 域名 --- */
-    if (RS.TRUST_LOW.some((h) => domain.includes(h))) {
+    /* --- 域名 / 路径 --- */
+    // 名单里既有纯域名，也有 "medium.com/@"、"sohu.com/a/" 这种路径前缀，
+    // 所以匹配范围是「主机名 + 路径」，不含协议与查询串（避免 ?ref=apple.com 这类误命中）。
+    let scope = domain.toLowerCase();
+    try {
+      const u = new URL(url);
+      scope = (u.hostname.replace(/^www\./, "") + u.pathname).toLowerCase();
+    } catch (e) {
+      /* url 非法时退化成只用域名匹配 */
+    }
+    if (RS.TRUST_LOW.some((h) => scope.includes(h))) {
       novelty -= 25;
       credibility = Math.min(credibility, 34);
       value = "low";
     }
-    if (RS.TRUST_HIGH.some((h) => domain.includes(h))) {
+    if (RS.TRUST_HIGH.some((h) => scope.includes(h))) {
       credibility = Math.max(credibility, 86);
     }
 
@@ -255,9 +345,12 @@
       credibility,
       timelessness,
       value,
+      valueKey: value,
       contentType,
+      contentTypeKey: contentType,
       redundancy: null,
       confidence: null,
+      lowConfidence: false,
       warning: null,
       source: "heuristic",
       model: null,
@@ -271,7 +364,7 @@
   }
 
   function hardSkip(reason, extra) {
-    return Object.assign(
+    const out = Object.assign(
       {
         kind: "page",
         verdict: "skip",
@@ -280,19 +373,27 @@
         credibility: 50,
         timelessness: 50,
         value: "low",
+        valueKey: "low",
         contentType: "other",
+        contentTypeKey: "other",
         redundancy: null,
         confidence: null,
+        lowConfidence: false,
         warning: null,
         source: "heuristic",
         model: null,
         usage: null,
         reason,
         approximate: true,
+        readingMinutes: 1,
         at: Date.now()
       },
       extra || {}
     );
+    // 调用方常只覆盖 contentType，这里保证 *Key 跟着走，避免两套字段不同步
+    out.valueKey = out.value;
+    out.contentTypeKey = out.contentType;
+    return out;
   }
 
   function clamp(v, lo, hi) {
