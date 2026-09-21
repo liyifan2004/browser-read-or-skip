@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <link rel="stylesheet" href="options.css" />
+  <title>Read or Skip · 设置</title>
+</head>
+<body>
+  <header class="hero">
+    <div class="hero-inner">
+      <div class="logo">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M2 4h6a3 3 0 0 1 3 3v13a2.5 2.5 0 0 0-2.5-2.5H2z"/>
+          <path d="M22 4h-6a3 3 0 0 0-3 3v13a2.5 2.5 0 0 1 2.5-2.5H22z"/>
+        </svg>
+      </div>
+      <div>
+        <h1>Read or Skip</h1>
+        <p>网页打开即刻判断：值得认真读 / 快速扫 / 可以跳过。由 TypeSafe <b>Jev</b> 决策模型驱动。</p>
+      </div>
+      <span class="ver" id="ver"></span>
+    </div>
+  </header>
+
+  <main>
+    <!-- 连接 -->
+    <section class="panel">
+      <div class="phead">
+        <h2>模型连接</h2>
+        <p>Key 只保存在本机 <code>chrome.storage.local</code>，不会上传到任何第三方，也已被 <code>.gitignore</code> 排除。</p>
+      </div>
+
+      <div class="field">
+        <label for="apiKey">TypeSafe API Key</label>
+        <div class="inputline">
+          <input id="apiKey" type="password" placeholder="apikey_xxxxxxxx_xxxxxxxx" autocomplete="off" spellcheck="false" />
+          <button id="toggleKey" class="ghost" type="button">显示</button>
+        </div>
+        <div class="hint">
+          获取方式：登录 <a href="https://console.typesafe.ai" target="_blank" rel="noreferrer">console.typesafe.ai</a> → 左侧 <b>API Keys</b> → <b>Create key</b> → 复制形如
+          <code>apikey_...</code> 的字符串，粘贴到上面。Jev 目前为早期访问（waitlist），若还没有账号需先申请。
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="model">模型 ID</label>
+        <div class="inputline">
+          <input id="model" type="text" placeholder="jev-latest" spellcheck="false" />
+          <button id="testBtn" class="ghost" type="button">测试连接</button>
+        </div>
+        <div class="hint">常用值：<code>jev-latest</code>（推荐）、<code>jev-preview</code>，或固定版本号如 <code>jev-1.13.0</code>。</div>
+        <div id="testResult" class="testresult" hidden></div>
+      </div>
+    </section>
+
+    <!-- 关注主题 -->
+    <section class="panel">
+      <div class="phead">
+        <h2>当前关注主题</h2>
+        <p>「相关度」就是相对这些主题计算的。写得越具体，判定越准；留空则由模型按一般技术从业者判断。</p>
+      </div>
+      <div id="topicBox" class="tagbox">
+        <div id="topicTags" class="tags"></div>
+        <input id="topicInput" type="text" placeholder="输入主题后按回车，例如：AI Agent 编排（最多 12 个）" spellcheck="false" />
+      </div>
+      <div class="hint">也可以写具体方向，如「浏览器扩展 Manifest V3」「RAG 评测」「Postgres 索引调优」。</div>
+    </section>
+
+    <!-- 显示 -->
+    <section class="panel">
+      <div class="phead"><h2>页面浮层</h2></div>
+
+      <label class="switchrow">
+        <span><b>启用浮层</b><small>在网页右下角显示判定卡片</small></span>
+        <input type="checkbox" id="showHud" class="sw" />
+      </label>
+
+      <label class="switchrow">
+        <span><b>启用扩展</b><small>总开关，关闭后不发任何请求</small></span>
+        <input type="checkbox" id="enabled" class="sw" />
+      </label>
+
+      <div class="field inline">
+        <label for="autoCollapse">自动收起延迟</label>
+        <div class="inputline small">
+          <input id="autoCollapse" type="number" min="0" max="60000" step="500" />
+          <span class="unit">毫秒（0 = 不自动收起）</span>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="privacyMode">发送给模型的内容</label>
+        <select id="privacyMode">
+          <option value="full">正文摘录（推荐，判定最准）</option>
+          <option value="titles">仅标题与摘要（最保守，判定会变粗）</option>
+        </select>
+      </div>
+
+      <div class="field inline">
+        <label for="excerptChars">正文摘录上限</label>
+        <div class="inputline small">
+          <input id="excerptChars" type="number" min="500" max="30000" step="500" />
+          <span class="unit">字符（Jev 单次上限 64K tokens）</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 搜索结果 -->
+    <section class="panel">
+      <div class="phead">
+        <h2>搜索结果标注</h2>
+        <p>在 Google / 必应 / 百度 / DuckDuckGo / Brave / 搜狗 的结果列表里，给每条结果加等级与可信度徽章。评估结果会被缓存，点进去时浮层可即时给出结论。</p>
+      </div>
+
+      <label class="switchrow">
+        <span><b>启用结果页标注</b><small>每条结果一次判定，按并发 5 请求发出</small></span>
+        <input type="checkbox" id="annotateSerp" class="sw" />
+      </label>
+
+      <div class="field inline">
+        <label for="serpMaxResults">每条结果页最多评估</label>
+        <div class="inputline small">
+          <input id="serpMaxResults" type="number" min="1" max="20" step="1" />
+          <span class="unit">条</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 排除站点 -->
+    <section class="panel">
+      <div class="phead">
+        <h2>跳过评估的站点 / 路径</h2>
+        <p>子串匹配，一行一条。邮箱、网盘、登录页建议保留在列表里，避免浪费额度也避免误判。</p>
+      </div>
+      <textarea id="siteBlocklist" rows="7" spellcheck="false"></textarea>
+    </section>
+
+    <!-- 高级 -->
+    <section class="panel">
+      <div class="phead"><h2>高级</h2></div>
+      <div class="grid2">
+        <div class="field inline">
+          <label for="timeout">请求超时</label>
+          <div class="inputline small"><input id="timeout" type="number" min="1000" max="30000" step="500" /><span class="unit">ms</span></div>
+        </div>
+        <div class="field inline">
+          <label for="cacheTtl">缓存有效期</label>
+          <div class="inputline small"><input id="cacheTtl" type="number" min="1" max="90" step="1" /><span class="unit">天</span></div>
+        </div>
+        <div class="field inline">
+          <label for="minTextLength">最短正文长度</label>
+          <div class="inputline small"><input id="minTextLength" type="number" min="100" max="5000" step="50" /><span class="unit">字符</span></div>
+        </div>
+        <div class="field inline">
+          <label for="cacheLimit">缓存条目上限</label>
+          <div class="inputline small"><input id="cacheLimit" type="number" min="50" max="2000" step="50" /><span class="unit">条（LRU 淘汰）</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 数据 -->
+    <section class="panel">
+      <div class="phead"><h2>用量与数据</h2></div>
+      <div class="statgrid" id="statgrid"></div>
+      <div class="btnrow">
+        <button id="clearCache" class="ghost danger" type="button">清空缓存</button>
+        <button id="resetSettings" class="ghost danger" type="button">恢复默认设置</button>
+      </div>
+      <div class="hint">
+        API 计费：Jev 按输入 token 计费（约 $0.042 / 百万 token），输出免费。本扩展单页约消耗 300–2000 输入 token，
+        折算约 ¥0.0001 量级，正常使用几乎无成本。
+      </div>
+    </section>
+  </main>
+
+  <div class="savebar">
+    <span id="saveHint" class="savehint">修改后会自动保存</span>
+    <button id="save" class="primary">保存并应用</button>
+  </div>
+
+  <script src="../lib/namespace.js"></script>
+  <script src="../lib/config.example.js"></script>
+  <!-- 本地密钥文件：不存在时浏览器会静默 404，不影响功能 -->
+  <script src="../lib/config.js"></script>
+  <script src="../lib/constants.js"></script>
+  <script src="../lib/storage.js"></script>
+  <script src="../lib/heuristics.js"></script>
+  <script src="../lib/jev.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>

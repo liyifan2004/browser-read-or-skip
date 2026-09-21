@@ -1,0 +1,84 @@
+{
+  "manifest_version": 3,
+  "name": "Read or Skip — 值得读吗",
+  "short_name": "Read or Skip",
+  "version": "1.0.0",
+  "description": "网页打开即刻判断：值得认真读 / 快速扫 / 可以跳过。并标注相关度、新信息程度、阅读价值与可信度。由 TypeSafe Jev 决策模型驱动。",
+  "minimum_chrome_version": "116",
+
+  "permissions": ["storage", "activeTab"],
+
+  "host_permissions": ["https://api.typesafe.ai/*"],
+
+  "background": {
+    "service_worker": "src/background/service-worker.js"
+  },
+
+  "action": {
+    "default_title": "Read or Skip",
+    "default_popup": "src/popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+
+  "options_ui": {
+    "page": "src/options/options.html",
+    "open_in_tab": true
+  },
+
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": [
+        "src/lib/namespace.js",
+        "src/lib/constants.js",
+        "src/lib/storage.js",
+        "src/lib/heuristics.js",
+        "src/lib/extract.js",
+        "src/content/hud.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": false
+    },
+    {
+      "matches": [
+        "*://www.google.com/search*",
+        "*://www.google.com.hk/search*",
+        "*://www.google.com.tw/search*",
+        "*://www.bing.com/search*",
+        "*://cn.bing.com/search*",
+        "*://www.baidu.com/s*",
+        "*://www.sogou.com/web*",
+        "*://duckduckgo.com/*",
+        "*://search.brave.com/search*"
+      ],
+      "js": [
+        "src/lib/namespace.js",
+        "src/lib/constants.js",
+        "src/lib/storage.js",
+        "src/lib/heuristics.js",
+        "src/content/serp.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+
+  "commands": {
+    "toggle-panel": {
+      "suggested_key": { "default": "Alt+Shift+R" },
+      "description": "显示 / 隐藏 Read or Skip 面板"
+    }
+  }
+}

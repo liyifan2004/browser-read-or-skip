@@ -1,0 +1,131 @@
+:root {
+  --bg: #14161b;
+  --panel: #1b1e25;
+  --panel2: #21252e;
+  --line: rgba(255, 255, 255, 0.08);
+  --text: #e8eaf0;
+  --muted: #98a0ae;
+  --dim: #767e8d;
+  --accent: #60a5fa;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  width: 372px;
+  background: var(--bg);
+  color: var(--text);
+  font: 400 13px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+svg { display: block; }
+
+/* ---------- 顶栏 ---------- */
+.top {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 14px; border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, #1e222a, #171a20);
+}
+.brand { display: flex; align-items: center; gap: 8px; }
+.logo {
+  width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center;
+  background: linear-gradient(140deg, #3b82f6, #8b5cf6); color: #fff;
+  box-shadow: 0 3px 10px rgba(59, 130, 246, 0.35);
+}
+.name { font-weight: 700; letter-spacing: 0.2px; font-size: 13.5px; }
+.iconbtn {
+  width: 26px; height: 26px; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--line); background: rgba(255, 255, 255, 0.04);
+  color: var(--muted); display: grid; place-items: center; transition: all 0.14s ease;
+}
+.iconbtn:hover { background: rgba(255, 255, 255, 0.11); color: #fff; }
+
+main { padding: 12px 14px 4px; }
+
+/* ---------- 结果卡 ---------- */
+.card {
+  border-radius: 14px; padding: 13px;
+  background: linear-gradient(180deg, var(--panel2), var(--panel));
+  border: 1px solid var(--line);
+}
+.loading { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; padding: 6px 0; }
+.spin {
+  width: 12px; height: 12px; border-radius: 50%; flex: none;
+  border: 2px solid rgba(255, 255, 255, 0.15); border-top-color: var(--accent);
+  animation: sp 0.75s linear infinite;
+}
+@keyframes sp { to { transform: rotate(360deg); } }
+
+.verdictwrap { display: flex; align-items: center; gap: 12px; }
+.ring { position: relative; width: 56px; height: 56px; flex: none; }
+.ring svg { transform: rotate(-90deg); }
+.ring .num {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+.ring .num small { font-size: 9px; opacity: 0.6; margin-left: 1px; }
+.vtext { min-width: 0; }
+.vlabel { font-size: 16px; font-weight: 700; letter-spacing: 0.2px; }
+.vreason { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
+
+.metrics { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.metric { display: grid; grid-template-columns: 58px 1fr 40px; align-items: center; gap: 8px; }
+.mlabel { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.track { height: 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
+.fill { height: 100%; border-radius: 3px; background: var(--accent); width: 0; transition: width 0.5s cubic-bezier(0.2, 0.8, 0.25, 1); }
+.mval { font-size: 11.5px; text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; color: #d6dae3; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 11px; }
+.chip {
+  font-size: 10.5px; padding: 3px 8px; border-radius: 7px; white-space: nowrap;
+  background: rgba(255, 255, 255, 0.05); border: 1px solid var(--line); color: var(--muted);
+}
+.chip b { color: var(--text); }
+.chip.hi { background: rgba(52, 211, 153, 0.11); border-color: rgba(52, 211, 153, 0.28); color: #6ee7b7; }
+.chip.mid { background: rgba(251, 191, 36, 0.11); border-color: rgba(251, 191, 36, 0.28); color: #fcd34d; }
+.chip.lo { background: rgba(148, 163, 184, 0.11); border-color: rgba(148, 163, 184, 0.24); color: #a9b4c4; }
+.chip.warn { background: rgba(251, 191, 36, 0.11); border-color: rgba(251, 191, 36, 0.28); color: #fcd34d; }
+
+.metaline { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--line); font-size: 10.5px; color: var(--dim); display: flex; gap: 6px; flex-wrap: wrap; }
+.sep { opacity: 0.4; }
+
+/* ---------- 不支持 ---------- */
+.unsupported { text-align: center; padding: 22px 12px; }
+.uicon { font-size: 24px; }
+.utitle { font-weight: 600; margin-top: 6px; }
+.udesc { font-size: 11.5px; color: var(--muted); margin-top: 4px; }
+
+/* ---------- 开关 ---------- */
+.toggles { margin-top: 12px; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); }
+.row {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 9px 12px; background: var(--panel); cursor: pointer;
+}
+.row + .row { border-top: 1px solid var(--line); }
+.rlabel { font-size: 12.5px; display: flex; flex-direction: column; }
+.rlabel small { font-size: 10.5px; color: var(--dim); font-weight: 400; }
+.sw {
+  appearance: none; width: 36px; height: 20px; border-radius: 999px; flex: none; cursor: pointer;
+  background: rgba(255, 255, 255, 0.14); position: relative; transition: background 0.16s ease; border: none;
+}
+.sw::after {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%;
+  background: #fff; transition: transform 0.16s cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+.sw:checked { background: #3b82f6; }
+.sw:checked::after { transform: translateX(16px); }
+
+/* ---------- 统计 ---------- */
+.stats { margin-top: 12px; font-size: 11px; color: var(--dim); display: flex; justify-content: space-between; padding: 0 2px; }
+.stats b { color: var(--muted); font-weight: 600; }
+
+/* ---------- 底部 ---------- */
+.bottom { display: flex; gap: 8px; padding: 12px 14px 14px; }
+.btn {
+  flex: 1; font-family: inherit; font-size: 12.5px; padding: 8px 12px; border-radius: 9px; cursor: pointer;
+  background: rgba(255, 255, 255, 0.05); border: 1px solid var(--line); color: #b7becc;
+  transition: all 0.14s ease;
+}
+.btn:hover { background: rgba(255, 255, 255, 0.12); color: #fff; }
+.btn.primary { background: linear-gradient(140deg, #3b82f6, #6366f1); border-color: transparent; color: #fff; font-weight: 600; }
+.btn.primary:hover { filter: brightness(1.12); }
+.btn[disabled] { opacity: 0.5; cursor: default; filter: none; }
