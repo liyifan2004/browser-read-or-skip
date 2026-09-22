@@ -25,6 +25,7 @@
     // 误点「屏蔽此站」必须有退路：当前站点在黑名单里时给出解除入口
     currentHost = hostnameOf(tab && tab.url);
     renderUnblockRow(settings);
+    renderPauseRow(settings, tab && tab.url);
 
     let res = null;
     try {
@@ -46,7 +47,7 @@
     } else if (res.skipped === "off") {
       showUnsupported("浮层已关闭", "浮层已在设置里关闭。打开上方「页面浮层」开关即可恢复。");
     } else if (res.skipped === "blocked") {
-      showUnsupported("站点已跳过评估", "此站点已跳过评估，浮层不再出现。点下方「解除屏蔽」即可恢复。");
+      showUnsupported("站点已跳过评估", "此站点已跳过评估，浮层不再出现。下方「恢复评估 / 解除屏蔽」可随时恢复。");
     } else if (res.skipped === "not-readable") {
       showUnsupported("不是可读页面", "这不是一个可读的正文页（可能是应用页、登录页或非 HTML 内容）。");
     } else if (!res.result) {
@@ -205,6 +206,26 @@
       await RS.storage.saveSettings({ siteBlocklist: next });
       $("unblockLabel").innerHTML = "已解除屏蔽<small>刷新页面后浮层会重新出现</small>";
       $("unblockBtn").hidden = true;
+    });
+  }
+
+  /** 当前站点处于分站点暂停期时显示恢复入口；与 heuristics.pauseStateOf 同一套判定 */
+  function renderPauseRow(settings, url) {
+    const until = RS.heuristics.pauseStateOf(url, settings);
+    if (!until || !currentHost) return;
+    const d = new Date(until);
+    const hhmm =
+      String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+    // 重写时必须保留 <small id="pauseHost">，否则外部按 id 取主机名会拿到 null
+    $("pauseLabel").innerHTML =
+      "此站点已暂停至 " + esc(hhmm) + "<small id=\"pauseHost\">" + esc(currentHost) + "</small>";
+    $("pauseRow").hidden = false;
+    $("pauseBtn").addEventListener("click", async () => {
+      const cur = ((await RS.storage.getSettings()).pausedSites) || {};
+      delete cur[currentHost];
+      await RS.storage.saveSettings({ pausedSites: cur });
+      $("pauseLabel").innerHTML = "已恢复评估<small>刷新页面后浮层会重新出现</small>";
+      $("pauseBtn").hidden = true;
     });
   }
 

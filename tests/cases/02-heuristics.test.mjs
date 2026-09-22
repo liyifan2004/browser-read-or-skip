@@ -246,16 +246,31 @@ describe("heuristics / isBlocked", () => {
     a.equal(f("https://chrome.google.com/webstore/category/extensions", settings), true);
   });
 
-  it("默认黑名单已包含主流社交流站点", () => {
+  it("默认黑名单预置三个最吵的社交流，其余交给浮层上的暂停/屏蔽", () => {
     const env = boot();
     const bl = env.win.RS.DEFAULT_SETTINGS.siteBlocklist;
-    for (const d of [
-      "weibo.com", "weibo.cn", "x.com", "twitter.com", "instagram.com",
-      "facebook.com", "tiktok.com", "douyin.com", "reddit.com", "threads.net"
-    ]) {
+    for (const d of ["weibo.com", "weibo.cn", "x.com", "twitter.com", "douyin.com"]) {
       a.ok(bl.includes(d), "默认黑名单应包含 " + d);
     }
-    a.ok(bl.includes("linkedin.com/feed"), "linkedin 信息流条目应存在");
+    for (const d of ["instagram.com", "facebook.com", "tiktok.com", "reddit.com", "threads.net", "linkedin.com/feed"]) {
+      a.ok(!bl.includes(d), d + " 不应预置在默认名单（由用户自己决定）");
+    }
+  });
+
+  it("分站点暂停：未到期拦下，到期自动恢复，不影响其他站点与子域", () => {
+    const env = boot();
+    const f = env.win.RS.heuristics.isBlocked;
+    const p = env.win.RS.heuristics.pauseStateOf;
+    const now = Date.now();
+    const active = { pausedSites: { "x.com": now + 3600000 } };
+    a.equal(f("https://x.com/home", active), true, "暂停期内应拦下");
+    a.equal(f("https://example.com/a", active), false, "其他站点不受影响");
+    a.equal(f("https://mobile.x.com/home", active), false, "暂停只对记下的主机名生效，不含子域");
+    a.ok(p("https://x.com/home", active) > now, "pauseStateOf 应返回到期时间戳");
+
+    const expired = { pausedSites: { "x.com": now - 1000 } };
+    a.equal(f("https://x.com/home", expired), false, "到期自动恢复");
+    a.equal(p("https://x.com/home", expired), null, "过期的暂停不算数");
   });
 });
 

@@ -182,6 +182,23 @@
 .tbtn.primary { background: var(--rs-accent); border-color: transparent; color: #fff; font-weight: 600; }
 .tbtn.primary:hover { filter: brightness(1.12); }
 .tbtn[disabled] { opacity: .45; cursor: default; }
+
+/* ---------- 暂停菜单：承诺感从轻到重 ---------- */
+.pausemenu {
+  display: flex; flex-direction: column; gap: 2px;
+  margin: 10px 16px 0; padding: 6px;
+  border-radius: 8px; border: 1px solid var(--rs-border);
+  background: var(--rs-surface-2);
+}
+.pausemenu .pitem {
+  font: 500 12px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  text-align: left; padding: 7px 9px; border: none; border-radius: 4px;
+  background: none; color: var(--rs-text-2); cursor: pointer; min-height: 32px;
+}
+.pausemenu .pitem:hover { background: var(--rs-surface); color: var(--rs-text); }
+.pausemenu .pitem:focus-visible { outline: 2px solid var(--rs-focus); outline-offset: 1px; }
+.pausemenu .pitem.danger { color: var(--rs-danger); }
+.pausemenu .pdiv { height: 1px; background: var(--rs-border); margin: 3px 4px; }
 `;
 
   /* ================= 图标 ================= */
@@ -385,22 +402,51 @@
   }
 
   /**
-   * 「屏蔽此站」：把当前主机名追加进 siteBlocklist（去重）并永久隐藏浮层。
-   * 只记主机名（不含路径），粒度是整个站点；撤销入口在 popup 的「解除屏蔽」。
+   * 暂停菜单：承诺感从轻到重，最后一项收编了原来的「屏蔽此站」。
+   * 放在卡片内部随内容展开，不用浮层定位，避免被 overflow 裁切。
    */
-  async function blockSite(btn) {
+  function pauseMenuHTML() {
+    return (
+      '<div class="pausemenu" data-pausemenu hidden>' +
+        '<button class="pitem" data-pause="3600000">暂停 1 小时</button>' +
+        '<button class="pitem" data-pause="today">暂停到今天结束</button>' +
+        '<button class="pitem" data-pause="604800000">暂停 7 天</button>' +
+        '<span class="pdiv"></span>' +
+        '<button class="pitem danger" data-pause="forever" title="这个站点不再弹浮层，可在弹窗里解除">永久屏蔽此站</button>' +
+      "</div>"
+    );
+  }
+
+  /**
+   * 「暂停 / 永久屏蔽」：
+   * - 暂停写进 settings.pausedSites = { 主机名: 到期时间戳 }，只对记下的主机名生效，到期自动恢复；
+   * - forever 走黑名单（siteBlocklist），撤销入口在弹窗的「解除屏蔽」。
+   * 分站点而不是全局：在 X 上暂停 1 小时，不应该影响同时开着的 GitHub 文档页。
+   */
+  async function pauseOrBlock(mode) {
     let host = "";
     try {
       host = location.hostname;
     } catch (e) {}
     if (!host) return;
-    if (btn) {
-      btn.disabled = true;
-      btn.textContent = "已屏蔽";
-    }
-    const cur = ((await RS.storage.getSettings()).siteBlocklist) || [];
-    if (cur.indexOf(host) === -1) {
-      await RS.storage.saveSettings({ siteBlocklist: cur.concat([host]) });
+
+    if (mode === "forever") {
+      const cur = ((await RS.storage.getSettings()).siteBlocklist) || [];
+      if (cur.indexOf(host) === -1) {
+        await RS.storage.saveSettings({ siteBlocklist: cur.concat([host]) });
+      }
+    } else if (mode === "today") {
+      const d = new Date();
+      d.setHours(24, 0, 0, 0);
+      const cur = ((await RS.storage.getSettings()).pausedSites) || {};
+      cur[host] = d.getTime();
+      await RS.storage.saveSettings({ pausedSites: cur });
+    } else {
+      const ms = Number(mode);
+      const until = Date.now() + (isFinite(ms) && ms > 0 ? ms : 3600000);
+      const cur = ((await RS.storage.getSettings()).pausedSites) || {};
+      cur[host] = until;
+      await RS.storage.saveSettings({ pausedSites: cur });
     }
     S.skipped = "blocked";
     hide(true);
@@ -452,11 +498,12 @@
         metric("时效性", r.timelessness, r.source === "heuristic") +
       "</div>" +
       chipsHTML(r) +
+      pauseMenuHTML() +
       '<div class="foot">' +
         '<div class="footmeta">' + footMeta(r) + "</div>" +
         '<div class="footactions">' +
           '<button class="tbtn primary" data-act="refresh">重新评估</button>' +
-          '<button class="tbtn" data-act="block" title="这个站点不再弹浮层，可在弹窗里解除">屏蔽此站</button>' +
+          '<button class="tbtn" data-act="pause" title="这段时间内这个站点不再弹浮层">暂停 ▾</button>' +
           '<button class="tbtn" data-act="close" title="本次不再显示">×</button>' +
         "</div>" +
       "</div>";
@@ -475,9 +522,19 @@
           });
         } else if (act === "block") {
           blockSite(btn);
+        } else if (act === "pause") {
+          const menu = S.card.querySelector("[data-pausemenu]");
+          if (menu) menu.hidden = !menu.hidden;
         } else if (act === "close") {
           hide(true);
         }
+      });
+    });
+
+    S.card.querySelectorAll("[data-pause]").forEach((item) => {
+      item.addEventListener("click", (e) => {
+        e.stopPropagation();
+        void pauseOrBlock(item.getAttribute("data-pause"));
       });
     });
 

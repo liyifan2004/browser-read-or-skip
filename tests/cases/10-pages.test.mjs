@@ -80,6 +80,7 @@ describe("popup / 渲染", () => {
       "../lib/namespace.js",
       "../lib/constants.js",
       "../lib/storage.js",
+      "../lib/heuristics.js",
       "popup.js"
     ]);
     a.ok(env.win.RS);

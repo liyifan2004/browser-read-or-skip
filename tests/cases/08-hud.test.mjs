@@ -367,11 +367,40 @@ describe("hud / 交互", () => {
     a.includes(shadow(env).querySelector(".wrap").className, "hidden");
   });
 
-  it("点「屏蔽此站」把主机名写进黑名单并永久隐藏浮层", async () => {
+  it("暂停菜单选 1 小时：写入 pausedSites 并隐藏浮层，其他站点不受影响", async () => {
+    const env = bootHud("https://noisy.example.com/post/9", articleHtml());
+    await waitFor(() => shadow(env) && shadow(env).querySelector("[data-act='pause']"), { label: "暂停按钮出现" });
+    shadow(env).querySelector("[data-act='pause']").dispatchEvent(new env.win.MouseEvent("click", { bubbles: true }));
+    const menu = shadow(env).querySelector("[data-pausemenu]");
+    a.equal(menu.hidden, false, "点暂停应展开菜单");
+    menu.querySelector("[data-pause='3600000']").dispatchEvent(new env.win.MouseEvent("click", { bubbles: true }));
+
+    await waitFor(() => {
+      const s = env.chrome.__store["rs.settings"];
+      const until = s && s.pausedSites && s.pausedSites["noisy.example.com"];
+      return until && until > Date.now();
+    }, { label: "pausedSites 写入到期时间" });
+    a.includes(shadow(env).querySelector(".wrap").className, "hidden", "暂停后浮层应立即隐藏");
+
+    const st = await askState(env);
+    a.equal(st.skipped, "blocked", "popup 应能看到被暂停的原因");
+
+    // 分站点：其他站点不受影响，浮层照常挂载
+    const other = createEnv({
+      url: "https://example.com/post/other",
+      html: articleHtml(),
+      chrome: env.chrome // 复用同一份 storage
+    });
+    loadContentScript(other, 0);
+    await waitFor(() => shadow(other), { label: "其他站点仍挂浮层" });
+  });
+
+  it("菜单里的「永久屏蔽此站」把主机名写进黑名单并永久隐藏浮层", async () => {
     const env = bootHud("https://noisy.example.com/post/1", articleHtml());
-    await waitFor(() => shadow(env) && shadow(env).querySelector("[data-act='block']"), { label: "屏蔽按钮出现" });
+    await waitFor(() => shadow(env) && shadow(env).querySelector("[data-act='pause']"), { label: "暂停按钮出现" });
+    shadow(env).querySelector("[data-act='pause']").dispatchEvent(new env.win.MouseEvent("click", { bubbles: true }));
     shadow(env)
-      .querySelector("[data-act='block']")
+      .querySelector("[data-pause='forever']")
       .dispatchEvent(new env.win.MouseEvent("click", { bubbles: true }));
 
     await waitFor(() => {
@@ -379,7 +408,6 @@ describe("hud / 交互", () => {
       return s && s.siteBlocklist && s.siteBlocklist.includes("noisy.example.com");
     }, { label: "黑名单写入主机名" });
     a.includes(shadow(env).querySelector(".wrap").className, "hidden", "屏蔽后浮层应立即隐藏");
-    a.equal(shadow(env).querySelector("[data-act='block']").textContent, "已屏蔽", "按钮应给出已生效的反馈");
 
     const st = await askState(env);
     a.equal(st.skipped, "blocked", "popup 应能看到被屏蔽的原因");

@@ -67,6 +67,11 @@
       <button id="unblockBtn" class="ubtn">解除屏蔽</button>
     </section>
 
+    <section class="row unblock" id="pauseRow" hidden>
+      <span class="rlabel" id="pauseLabel">此站点已暂停<small id="pauseHost"></small></span>
+      <button id="pauseBtn" class="ubtn">恢复评估</button>
+    </section>
+
     <section class="stats" id="stats"></section>
   </main>
 
@@ -77,6 +82,7 @@
   <script src="../lib/namespace.js"></script>
   <script src="../lib/constants.js"></script>
   <script src="../lib/storage.js"></script>
+  <script src="../lib/heuristics.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

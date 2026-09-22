@@ -174,8 +174,27 @@
    * - 其余条目（"/login"、"/signin"、"login." 这类路径 / 前缀片段）：维持旧的子串匹配。
    * 任一命中即 blocked。
    */
+  /**
+   * 分站点暂停：settings.pausedSites = { 主机名: 到期时间戳 }。
+   * 只对记下的那个主机名生效（不含子域 —— 你暂停的是你正在看的那个站）；
+   * 到期自动失效返回 null，不需要任何清理任务。
+   */
+  function pauseStateOf(url, settings) {
+    const paused = (settings && settings.pausedSites) || {};
+    let host = "";
+    try {
+      host = new URL(url).hostname.toLowerCase();
+    } catch (e) {
+      return null;
+    }
+    const until = paused[host];
+    if (!until) return null;
+    return Date.now() < until ? until : null;
+  }
+
   function isBlocked(url, settings) {
     if (!url) return true;
+    if (pauseStateOf(url, settings) != null) return true;
     const list = (settings && settings.siteBlocklist) || [];
     const lower = String(url).toLowerCase();
     let host = "";
@@ -436,6 +455,7 @@
     isBlocked,
     isReadablePage,
     isSearchResultsPage,
+    pauseStateOf,
     scorePage,
     domainOf,
     trustOfDomain,

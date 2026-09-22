@@ -100,19 +100,18 @@
       "login.",
       "/login",
       "/signin",
-      // 社交流：无限滚动 + 强时效内容，认真读判定没有意义，默认整站跳过
+      // 社交流：无限滚动 + 强时效内容，认真读判定没有意义。
+      // 只预置最吵的三个（微博 / X / 抖音）；其余站点交给浮层上的「暂停 / 永久屏蔽」由用户自己决定，
+      // 显式控制比隐式名单更可发现 —— 用户至少知道浮层为什么不出现。
       "weibo.com",
       "weibo.cn",
       "x.com",
       "twitter.com",
-      "instagram.com",
-      "facebook.com",
-      "tiktok.com",
-      "douyin.com",
-      "reddit.com",
-      "threads.net",
-      "linkedin.com/feed"
+      "douyin.com"
     ],
+
+    // 分站点暂停：{ 主机名: 到期时间戳 }。到期自动失效，不需要清理任务；与黑名单分开存（临时 vs 永久）
+    pausedSites: {},
 
     // 正文太短的页面不评估
     minTextLength: 400,

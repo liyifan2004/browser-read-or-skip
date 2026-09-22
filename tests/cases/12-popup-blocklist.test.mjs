@@ -29,10 +29,41 @@ function bootPopup(opts = {}) {
           }))
     }
   });
-  loadLibs(env, ["storage.js"]);
+  loadLibs(env, ["storage.js", "heuristics.js"]);
   evalRel(env.win, "src/popup/popup.js");
   return env;
 }
+
+describe("popup / 分站点暂停", () => {
+  it("站点处于暂停期：显示「已暂停至」和恢复按钮，点击后从 pausedSites 移除", async () => {
+    const env = bootPopup({
+      tabs: [{ id: 1, active: true, url: "https://s.weibo.com/weibo?q=x" }],
+      store: { "rs.settings": { pausedSites: { "s.weibo.com": Date.now() + 3600000 } } }
+    });
+    await waitFor(() => !env.doc.getElementById("pauseRow").hidden, { label: "暂停行出现" });
+    a.includes(env.doc.getElementById("pauseLabel").textContent, "已暂停至");
+    a.equal(env.doc.getElementById("pauseHost").textContent, "s.weibo.com");
+
+    env.doc.getElementById("pauseBtn").dispatchEvent(new env.win.MouseEvent("click", { bubbles: true }));
+    await waitFor(() => {
+      const s = env.chrome.__store["rs.settings"];
+      return !s.pausedSites || !s.pausedSites["s.weibo.com"];
+    }, { label: "pausedSites 移除该主机名" });
+    a.includes(env.doc.getElementById("pauseLabel").textContent, "已恢复评估");
+  });
+
+  it("未暂停的站点不显示暂停行，也不改写 pausedSites", async () => {
+    const env = bootPopup({
+      tabs: [{ id: 1, active: true, url: "https://example.com/a" }],
+      store: { "rs.settings": {} }
+    });
+    await waitFor(() => env.doc.getElementById("save") || true, { label: "页面就绪" });
+    await sleep(60);
+    a.equal(env.doc.getElementById("pauseRow").hidden, true);
+    const s = env.chrome.__store["rs.settings"];
+    a.ok(!s.pausedSites || Object.keys(s.pausedSites).length === 0, "不该凭空写出 pausedSites");
+  });
+});
 
 describe("popup / 解除屏蔽", () => {
   it("当前站点在黑名单里：显示解除入口，点击后移除条目并给出反馈", async () => {
