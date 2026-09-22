@@ -136,6 +136,24 @@ describe("questions / 搜索结果问题定义", () => {
     a.includes(q.verdict.instructions, "snippet");
     a.includes(q.credibility.instructions, "domain");
   });
+
+  it("relevance 以查询意图为主判据，focus topics 降为次要参照", () => {
+    const env = boot();
+    const q = env.win.RS.questions.serpQuestions(SETTINGS);
+    a.includes(q.relevance.instructions, "query");
+    a.includes(q.relevance.instructions, "PRIMARY");
+    a.includes(JSON.stringify(q.relevance.criteria), "查询");
+    a.notIncludes(JSON.stringify(q.relevance.criteria), "关注主题");
+  });
+
+  it("verdict 语义是「值得点开看」，不再要求细读，且仍须拦营销页", () => {
+    const env = boot();
+    const q = env.win.RS.questions.serpQuestions(SETTINGS);
+    a.notIncludes(JSON.stringify(q.verdict.criteria), "细读");
+    a.includes(q.verdict.criteria.read, "点开看");
+    a.includes(q.verdict.criteria.read, "命中");
+    a.includes(JSON.stringify(q.verdict.criteria.skip), "营销");
+  });
 });
 
 describe("questions / normalizePage 映射", () => {

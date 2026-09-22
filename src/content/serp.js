@@ -6,7 +6,7 @@
  * 副产品：评估结果会写入按 URL 索引的缓存，点进结果页时浮层可以瞬时给出结论。
  *
  * 样式策略：所有徽章 / 汇总条样式集中在一次注入的 <style id="rs-serp-style"> 里，
- * 用 data-v（等级）与 lt / dk（明暗主题）两个属性驱动，宿主页样式不影响它们。
+ * 用 data-v（等级）与 rs-lt / rs-dk（明暗主题）两个属性驱动，宿主页样式不影响它们。
  * 明暗主题按结果容器背景的相对亮度选择（> 0.5 视为浅色页）。
  * 每档等级除颜色外还有非颜色线索：实心点（read）/ 空心底（skim）/ 短横（skip）。
  */
@@ -16,6 +16,10 @@
   window.__RS_SERP_LOADED__ = true;
 
   const CHIP_CLASS = "rs-serp-chip";
+  /* 主题类名必须带 rs- 前缀：裸的 lt / dk 太通用，Google 等站的压缩 CSS 里
+     很可能有同名规则，会把宿主页样式直接泼到我们的徽章上。 */
+  const THEME_LIGHT = "rs-lt";
+  const THEME_DARK = "rs-dk";
   const STYLE_ID = "rs-serp-style";
 
   const ENGINES = [
@@ -83,31 +87,35 @@
   padding: 1px 7px; margin-right: 7px; border-radius: 4px;
   vertical-align: middle; white-space: nowrap; letter-spacing: .2px;
   position: relative; top: -1px; cursor: help; border: 1px solid transparent;
+  /* 防御宿主页规则波及徽章排版：翻转 / 竖排 / RTL 一律就地否定（!important 只
+     用于这几个防御项， scoped 到本徽章类，不影响宿主页任何元素）。 */
+  transform: none !important; direction: ltr !important;
+  unicode-bidi: isolate !important; writing-mode: horizontal-tb !important;
 }
 .${CHIP_CLASS}::before { content: ""; display: inline-block; flex: none; }
 .${CHIP_CLASS}[data-marker="dot-solid"]::before { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .${CHIP_CLASS}[data-marker="dot-hollow"]::before { width: 6px; height: 6px; border-radius: 50%; border: 1.5px solid currentColor; box-sizing: border-box; }
 .${CHIP_CLASS}[data-marker="dash"]::before { width: 8px; height: 2px; border-radius: 999px; background: currentColor; }
-.${CHIP_CLASS}.lt { border-color: rgba(15,23,42,.14); }
-.${CHIP_CLASS}.dk { border-color: rgba(255,255,255,.16); }
-.${CHIP_CLASS}.lt[data-v="read"]    { color: ${RS.SERP_THEME.light.read.fg};    background: ${RS.SERP_THEME.light.read.bg}; }
-.${CHIP_CLASS}.lt[data-v="skim"]    { color: ${RS.SERP_THEME.light.skim.fg};    background: ${RS.SERP_THEME.light.skim.bg}; }
-.${CHIP_CLASS}.lt[data-v="skip"]    { color: ${RS.SERP_THEME.light.skip.fg};    background: ${RS.SERP_THEME.light.skip.bg}; }
-.${CHIP_CLASS}.lt[data-v="pending"] { color: ${RS.SERP_THEME.light.pending.fg}; background: ${RS.SERP_THEME.light.pending.bg}; }
-.${CHIP_CLASS}.dk[data-v="read"]    { color: ${RS.SERP_THEME.dark.read.fg};    background: ${RS.SERP_THEME.dark.read.bg}; }
-.${CHIP_CLASS}.dk[data-v="skim"]    { color: ${RS.SERP_THEME.dark.skim.fg};    background: ${RS.SERP_THEME.dark.skim.bg}; }
-.${CHIP_CLASS}.dk[data-v="skip"]    { color: ${RS.SERP_THEME.dark.skip.fg};    background: ${RS.SERP_THEME.dark.skip.bg}; }
-.${CHIP_CLASS}.dk[data-v="pending"] { color: ${RS.SERP_THEME.dark.pending.fg}; background: ${RS.SERP_THEME.dark.pending.bg}; }
+.${CHIP_CLASS}.${THEME_LIGHT} { border-color: rgba(15,23,42,.14); }
+.${CHIP_CLASS}.${THEME_DARK} { border-color: rgba(255,255,255,.16); }
+.${CHIP_CLASS}.${THEME_LIGHT}[data-v="read"]    { color: ${RS.SERP_THEME.light.read.fg};    background: ${RS.SERP_THEME.light.read.bg}; }
+.${CHIP_CLASS}.${THEME_LIGHT}[data-v="skim"]    { color: ${RS.SERP_THEME.light.skim.fg};    background: ${RS.SERP_THEME.light.skim.bg}; }
+.${CHIP_CLASS}.${THEME_LIGHT}[data-v="skip"]    { color: ${RS.SERP_THEME.light.skip.fg};    background: ${RS.SERP_THEME.light.skip.bg}; }
+.${CHIP_CLASS}.${THEME_LIGHT}[data-v="pending"] { color: ${RS.SERP_THEME.light.pending.fg}; background: ${RS.SERP_THEME.light.pending.bg}; }
+.${CHIP_CLASS}.${THEME_DARK}[data-v="read"]    { color: ${RS.SERP_THEME.dark.read.fg};    background: ${RS.SERP_THEME.dark.read.bg}; }
+.${CHIP_CLASS}.${THEME_DARK}[data-v="skim"]    { color: ${RS.SERP_THEME.dark.skim.fg};    background: ${RS.SERP_THEME.dark.skim.bg}; }
+.${CHIP_CLASS}.${THEME_DARK}[data-v="skip"]    { color: ${RS.SERP_THEME.dark.skip.fg};    background: ${RS.SERP_THEME.dark.skip.bg}; }
+.${CHIP_CLASS}.${THEME_DARK}[data-v="pending"] { color: ${RS.SERP_THEME.dark.pending.fg}; background: ${RS.SERP_THEME.dark.pending.bg}; }
 #rs-serp-summary {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   margin: 8px 0 12px; padding: 8px 12px; border-radius: 8px;
   font: 500 12px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
   border: 1px solid transparent;
 }
-#rs-serp-summary.lt { background: ${RS.SERP_THEME.summary.light.bg}; border-color: #C9D8EF; color: ${RS.SERP_THEME.summary.light.fg}; }
-#rs-serp-summary.lt .rs-brand { color: ${RS.SERP_THEME.summary.light.brand}; }
-#rs-serp-summary.dk { background: ${RS.SERP_THEME.summary.dark.bg}; border-color: #39445A; color: ${RS.SERP_THEME.summary.dark.fg}; }
-#rs-serp-summary.dk .rs-brand { color: ${RS.SERP_THEME.summary.dark.brand}; }
+#rs-serp-summary.${THEME_LIGHT} { background: ${RS.SERP_THEME.summary.light.bg}; border-color: #C9D8EF; color: ${RS.SERP_THEME.summary.light.fg}; }
+#rs-serp-summary.${THEME_LIGHT} .rs-brand { color: ${RS.SERP_THEME.summary.light.brand}; }
+#rs-serp-summary.${THEME_DARK} { background: ${RS.SERP_THEME.summary.dark.bg}; border-color: #39445A; color: ${RS.SERP_THEME.summary.dark.fg}; }
+#rs-serp-summary.${THEME_DARK} .rs-brand { color: ${RS.SERP_THEME.summary.dark.brand}; }
 #rs-serp-summary .rs-sep { opacity: .35; }
 #rs-serp-summary .rs-dim { opacity: .65; }
 `;
@@ -144,7 +152,7 @@
     observe();
   }
 
-  /** 样式只注入一次；等级颜色随 data-v 与 lt/dk 类切换 */
+  /** 样式只注入一次；等级颜色随 data-v 与 rs-lt/rs-dk 类切换 */
   function ensureStyle() {
     if (document.getElementById(STYLE_ID)) return;
     const st = document.createElement("style");
@@ -292,13 +300,17 @@
     const target = anchorNodeFor(item.node);
     if (!target || !target.parentNode) return;
     const chip = document.createElement("span");
-    chip.className = CHIP_CLASS + " " + (S.lightTheme ? "lt" : "dk");
+    chip.className = CHIP_CLASS + " " + (S.lightTheme ? THEME_LIGHT : THEME_DARK);
     chip.dataset.state = "pending";
     chip.dataset.v = "pending";
     chip.dataset.marker = themeFor("pending").marker;
     chip.textContent = "…";
+    // 插到标题链接之前且与它同级：徽章彻底脱离 <a> 内部，
+    // 宿主页针对链接内部（a > h3 / a > span）的规则不再命中徽章。
+    const anchor = target.closest ? target.closest("a") : null;
+    const host = anchor || target;
     try {
-      target.parentNode.insertBefore(chip, target);
+      host.parentNode.insertBefore(chip, host);
     } catch (e) {
       return;
     }
@@ -316,7 +328,7 @@
     el.dataset.marker = theme.marker;
     const tip = [];
     tip.push(v.label);
-    if (typeof result.relevance === "number") tip.push("与你关注主题相关度 " + result.relevance + "%");
+    if (typeof result.relevance === "number") tip.push("与查询意图相关度 " + result.relevance + "%");
     if (typeof result.credibility === "number") tip.push("信息可信度 " + result.credibility + "%");
     if (result.warning === "intent") tip.push("⚠️ 可能名不副实 / 商业页");
     el.title = tip.join("\n");
@@ -374,13 +386,13 @@
     if (!bar || !bar.isConnected) {
       bar = document.createElement("div");
       bar.id = "rs-serp-summary";
-      bar.className = S.lightTheme ? "lt" : "dk";
+      bar.className = S.lightTheme ? THEME_LIGHT : THEME_DARK;
 
       const host = document.querySelector(S.engine.container) || document.body;
       host.insertBefore(bar, host.firstChild);
       S.summaryEl = bar;
     } else {
-      bar.className = S.lightTheme ? "lt" : "dk";
+      bar.className = S.lightTheme ? THEME_LIGHT : THEME_DARK;
     }
 
     const dot = (color) =>

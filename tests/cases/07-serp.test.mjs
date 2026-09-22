@@ -82,7 +82,10 @@ describe("serp / Google 结果标注", () => {
     const env = bootSerp("https://www.google.com/search?q=x", GOOGLE_HTML);
     await waitFor(() => env.doc.querySelectorAll(CHIP).length >= 1, { label: "徽章出现" });
     const h3 = env.doc.querySelector("#search .MjjYud h3");
-    a.includes(h3.previousElementSibling.className, "rs-serp-chip", "徽章应是标题的前一个兄弟节点");
+    const anchor = h3.closest("a");
+    const chipEl = anchor.previousElementSibling;
+    a.includes(chipEl.className, "rs-serp-chip", "徽章应是标题链接的前一个兄弟节点");
+    a.ok(!chipEl.closest("a"), "徽章必须在 <a> 外部，宿主页针对链接内部的样式不能命中它");
     a.includes(h3.textContent, "扩展开发官方文档", "标题本身不能被改动");
   });
 
@@ -206,7 +209,9 @@ describe("serp / 其他引擎", () => {
 
     const chip = env.doc.querySelector(CHIP);
     a.includes(chip.className, "rs-serp-chip");
-    a.includes(chip.className, "lt", "jsdom 拿不到背景色，应落到浅色主题");
+    a.includes(chip.className, "rs-lt", "jsdom 拿不到背景色，应落到浅色主题（且类名带 rs- 前缀）");
+    a.includes(css, ".rs-serp-chip.rs-lt", "主题类改成 rs- 前缀，避免撞上宿主页短类名");
+    a.includes(css, "transform: none", "徽章自带防御：不受宿主页 transform 波及");
   });
 
   it("评估结果带等级属性与非颜色线索", async () => {

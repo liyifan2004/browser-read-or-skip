@@ -125,6 +125,19 @@ main { padding: 12px 16px 4px; }
 .sw:checked { background: var(--rs-accent); }
 .sw:checked::after { transform: translateX(18px); }
 
+/* ---------- 已屏蔽站点（可撤销） ---------- */
+.unblock {
+  margin-top: 12px; border-radius: 12px; border: 1px solid var(--rs-border);
+  background: var(--rs-surface); padding: 8px 12px; cursor: default;
+}
+.ubtn {
+  font-family: inherit; font-size: 12px; padding: 6px 12px; border-radius: 8px; cursor: pointer;
+  background: transparent; border: 1px solid var(--rs-border-ctl); color: var(--rs-text-2);
+  transition: background 0.12s ease, color 0.12s ease; white-space: nowrap;
+}
+.ubtn:hover { background: var(--rs-surface-2); color: var(--rs-text); }
+.ubtn[disabled] { opacity: 0.5; cursor: default; }
+
 /* ---------- 统计 ---------- */
 .stats { margin-top: 12px; font-size: 12px; color: var(--rs-text-2); display: flex; justify-content: space-between; padding: 0 4px; }
 .stats b { color: var(--rs-text); font-weight: 600; }
@@ -142,6 +155,7 @@ main { padding: 12px 16px 4px; }
 .btn[disabled] { opacity: 0.5; cursor: default; filter: none; }
 @media (pointer: coarse) {
   .btn { padding: 12px 12px; }
+  .ubtn { padding: 12px 14px; }
   .sw { width: 48px; height: 26px; }
   .sw::after { width: 22px; height: 22px; }
   .sw:checked::after { transform: translateX(22px); }

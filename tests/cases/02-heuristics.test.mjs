@@ -223,6 +223,40 @@ describe("heuristics / isBlocked", () => {
     a.equal(f(null, BASE_SETTINGS), true);
     a.equal(f("https://example.com/x", {}), false, "没有名单时不应拦");
   });
+
+  it("纯域名条目按主机名精确匹配：x.com 不得误杀 netflix.com", () => {
+    const env = boot();
+    const f = env.win.RS.heuristics.isBlocked;
+    const settings = { siteBlocklist: ["x.com", "weibo.com"] };
+    a.equal(f("https://www.netflix.com/watch/123", settings), false, "netflix.com 含子串 x.com 但不是 x.com");
+    a.equal(f("https://x.com/user/status/1", settings), true);
+    a.equal(f("https://mobile.x.com/home", settings), true, "子域也应被拦");
+    a.equal(f("https://weibo.com/u/123", settings), true);
+    a.equal(f("https://s.weibo.com/weibo?q=x", settings), true, "子域 s.weibo.com 也应被拦");
+    a.equal(f("https://notweibo.com/", settings), false, "只恰好含 weibo.com 子串的站点不拦");
+  });
+
+  it("路径与前缀条目维持子串匹配", () => {
+    const env = boot();
+    const f = env.win.RS.heuristics.isBlocked;
+    const settings = { siteBlocklist: ["/login", "login.", "chrome.google.com/webstore"] };
+    a.equal(f("https://example.com/login", settings), true);
+    a.equal(f("https://example.com/account/login-next", settings), true);
+    a.equal(f("https://a.login.example.com/page", settings), true, "login. 这类前缀条目仍是子串匹配");
+    a.equal(f("https://chrome.google.com/webstore/category/extensions", settings), true);
+  });
+
+  it("默认黑名单已包含主流社交流站点", () => {
+    const env = boot();
+    const bl = env.win.RS.DEFAULT_SETTINGS.siteBlocklist;
+    for (const d of [
+      "weibo.com", "weibo.cn", "x.com", "twitter.com", "instagram.com",
+      "facebook.com", "tiktok.com", "douyin.com", "reddit.com", "threads.net"
+    ]) {
+      a.ok(bl.includes(d), "默认黑名单应包含 " + d);
+    }
+    a.ok(bl.includes("linkedin.com/feed"), "linkedin 信息流条目应存在");
+  });
 });
 
 describe("heuristics / isReadablePage", () => {

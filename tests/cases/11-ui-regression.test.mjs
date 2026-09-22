@@ -303,6 +303,36 @@ describe("UI 回归 / QA 复核固化的契约", () => {
     a.ok(env.doc.getElementById("rs-serp-style"), "样式节点应已挂到文档上");
   });
 
+  it("徽章与汇总条的主题类名必须带 rs- 前缀，不得出现裸 lt / dk（Google 深色页 180° 翻转回归防线）", async () => {
+    const env = createEnv({
+      url: "https://www.google.com/search?q=qa",
+      html: SERP_FIXTURE,
+      chromeOpts: { onRuntimeSendMessage: () => Promise.resolve({ ok: true, results: {} }) }
+    });
+    loadContentScript(env, 1);
+    await waitFor(() => env.doc.querySelectorAll(".rs-serp-chip").length >= 1, { label: "徽章出现" });
+    await waitFor(() => env.doc.getElementById("rs-serp-summary"), { label: "汇总条出现" });
+
+    const targets = [...env.doc.querySelectorAll(".rs-serp-chip"), env.doc.getElementById("rs-serp-summary")];
+    a.ok(targets.length >= 3, "徽章与汇总条都应存在");
+    for (const el of targets) {
+      a.ok(
+        el.classList.contains("rs-lt") || el.classList.contains("rs-dk"),
+        "主题类名应带 rs- 前缀（实际 class=" + el.className + "）"
+      );
+      // classList 是精确 token 匹配，不会被 rs-lt 里的子串骗过
+      a.ok(!el.classList.contains("lt"), "不得使用裸 lt 类名：会撞上宿主页压缩 CSS（实际 class=" + el.className + "）");
+      a.ok(!el.classList.contains("dk"), "不得使用裸 dk 类名：会撞上宿主页压缩 CSS（实际 class=" + el.className + "）");
+    }
+
+    // 注入样式里的主题选择器也必须全部走 rs- 前缀
+    const css = env.doc.getElementById("rs-serp-style").textContent;
+    a.ok(!/(^|[,\s])\.lt[\s.{:]/m.test(css), "注入样式里不得出现裸 .lt 选择器");
+    a.ok(!/(^|[,\s])\.dk[\s.{:]/m.test(css), "注入样式里不得出现裸 .dk 选择器");
+    a.includes(css, "transform: none !important", "徽章须自带 transform 防御");
+    a.includes(css, "unicode-bidi: isolate !important", "徽章须自带 unicode-bidi 防御");
+  });
+
   it("命中区用伪元素扩到 44px，弹窗与设置页有 pointer: coarse 触屏放大", () => {
     a.match(POPUP_CSS, /\.iconbtn::after\s*\{[^}]*inset:\s*-8px/, "弹窗图标按钮应扩出 44px 命中区");
     a.match(HUD_CSS, /\.iconbtn::after\s*\{[^}]*inset:\s*-8px/, "HUD 图标按钮应扩出 44px 命中区");

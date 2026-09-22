@@ -367,6 +367,35 @@ describe("hud / 交互", () => {
     a.includes(shadow(env).querySelector(".wrap").className, "hidden");
   });
 
+  it("点「屏蔽此站」把主机名写进黑名单并永久隐藏浮层", async () => {
+    const env = bootHud("https://noisy.example.com/post/1", articleHtml());
+    await waitFor(() => shadow(env) && shadow(env).querySelector("[data-act='block']"), { label: "屏蔽按钮出现" });
+    shadow(env)
+      .querySelector("[data-act='block']")
+      .dispatchEvent(new env.win.MouseEvent("click", { bubbles: true }));
+
+    await waitFor(() => {
+      const s = env.chrome.__store["rs.settings"];
+      return s && s.siteBlocklist && s.siteBlocklist.includes("noisy.example.com");
+    }, { label: "黑名单写入主机名" });
+    a.includes(shadow(env).querySelector(".wrap").className, "hidden", "屏蔽后浮层应立即隐藏");
+    a.equal(shadow(env).querySelector("[data-act='block']").textContent, "已屏蔽", "按钮应给出已生效的反馈");
+
+    const st = await askState(env);
+    a.equal(st.skipped, "blocked", "popup 应能看到被屏蔽的原因");
+
+    // 同一站点再打开新页面：init 阶段就直接跳过，不再挂浮层
+    const again = createEnv({
+      url: "https://noisy.example.com/post/2",
+      html: articleHtml(),
+      chrome: env.chrome // 复用同一份 storage
+    });
+    loadContentScript(again, 0);
+    await sleep(150);
+    a.equal(shadow(again), null, "同站点的新页面不应再挂浮层");
+    a.equal((await askState(again)).skipped, "blocked");
+  });
+
   it("发送给后台的 state 带上关注主题与正文", async () => {
     let payload = null;
     const env = bootHud("https://example.com/post/state", articleHtml(), {

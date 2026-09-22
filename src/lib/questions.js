@@ -118,26 +118,39 @@
 
   /* ================= 搜索结果条目评估 ================= */
 
+  /* SERP 相关度只对查询意图负责：页面级 relevance 讲的是相对关注主题，
+     而搜索结果页上用户关心的是「这条结果能不能答上我刚才搜的那句话」。 */
+  const SERP_RELEVANCE_CRITERIA = [
+    "完全跑题：与查询想要找的东西无关",
+    "几乎不相关：只是字面上沾了一点查询词",
+    "部分相关：沾边，但不是查询想要的内容",
+    "较为相关：很可能包含查询想要的信息",
+    "直接命中：正是这次查询想要找的页面"
+  ];
+
   function serpQuestions(settings) {
     const topics = TOPIC_JOIN(settings.topics);
     return {
       verdict: {
         type: "choice",
         instructions:
-          "The reader searched a search engine and is looking at this single result " +
-          "(title, url, snippet only). Focus topics: " + topics + ". " +
-          "Decide whether this result is worth clicking and reading.",
+          "The reader typed a search query (state.query) and is looking at this single result " +
+          "(title, url, snippet only). Decide whether this result is worth clicking for THIS query: " +
+          "does it likely contain what the query is asking for? The reader\u2019s focus topics " +
+          "(" + topics + ") are only a secondary preference.",
         criteria: {
-          read: "值得点开细读",
-          skim: "可点开扫一眼",
-          skip: "跳过这条结果"
+          read: "值得点开看：很可能直接命中这次查询想要的东西",
+          skim: "可能有用：需要点进去再挑，或只覆盖部分查询意图",
+          skip: "与查询无关，或明显营销 / 低质结果"
         }
       },
       relevance: {
         type: "score",
         instructions:
-          "How relevant is this search result to the reader's focus topics (" + topics + ")?",
-        criteria: RELEVANCE_CRITERIA
+          "How well does this result match the intent of the user's search query (state.query)? " +
+          "The query is the PRIMARY signal: judge whether this result answers what was asked. " +
+          "The reader's focus topics (" + topics + ") are only a tiebreaker.",
+        criteria: SERP_RELEVANCE_CRITERIA
       },
       credibility: {
         type: "score",
@@ -231,7 +244,7 @@
     const out = {
       kind: "serp",
       verdict,
-      relevance: RS.jev.scoreToPct(a.relevance, RELEVANCE_CRITERIA.length),
+      relevance: RS.jev.scoreToPct(a.relevance, SERP_RELEVANCE_CRITERIA.length),
       credibility: RS.jev.scoreToPct(a.credibility, CREDIBILITY_CRITERIA.length),
       intentMatch: RS.jev.noulValue(a.intentMatch),
       novelty: null,
@@ -255,6 +268,7 @@
     normalizeSerp,
     CRITERIA: {
       relevance: RELEVANCE_CRITERIA,
+      serpRelevance: SERP_RELEVANCE_CRITERIA,
       novelty: NOVELTY_CRITERIA,
       credibility: CREDIBILITY_CRITERIA,
       timelessness: TIMELESSNESS_CRITERIA

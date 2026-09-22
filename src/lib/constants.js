@@ -85,7 +85,8 @@
     privacyMode: "full",
     excerptChars: 6000,
 
-    // 跳过评估的站点（子串匹配）
+    // 跳过评估的站点：纯域名条目按主机名精确匹配（子域也算），
+    // 其余条目（路径片段、"login." 这类前缀）按子串匹配。
     siteBlocklist: [
       "localhost",
       "127.0.0.1",
@@ -98,7 +99,19 @@
       "chromewebstore.google.com",
       "login.",
       "/login",
-      "/signin"
+      "/signin",
+      // 社交流：无限滚动 + 强时效内容，认真读判定没有意义，默认整站跳过
+      "weibo.com",
+      "weibo.cn",
+      "x.com",
+      "twitter.com",
+      "instagram.com",
+      "facebook.com",
+      "tiktok.com",
+      "douyin.com",
+      "reddit.com",
+      "threads.net",
+      "linkedin.com/feed"
     ],
 
     // 正文太短的页面不评估

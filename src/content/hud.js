@@ -384,6 +384,28 @@
     S.hidden = false;
   }
 
+  /**
+   * 「屏蔽此站」：把当前主机名追加进 siteBlocklist（去重）并永久隐藏浮层。
+   * 只记主机名（不含路径），粒度是整个站点；撤销入口在 popup 的「解除屏蔽」。
+   */
+  async function blockSite(btn) {
+    let host = "";
+    try {
+      host = location.hostname;
+    } catch (e) {}
+    if (!host) return;
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "已屏蔽";
+    }
+    const cur = ((await RS.storage.getSettings()).siteBlocklist) || [];
+    if (cur.indexOf(host) === -1) {
+      await RS.storage.saveSettings({ siteBlocklist: cur.concat([host]) });
+    }
+    S.skipped = "blocked";
+    hide(true);
+  }
+
   /* ---------- 渲染 ---------- */
 
   function render() {
@@ -434,6 +456,7 @@
         '<div class="footmeta">' + footMeta(r) + "</div>" +
         '<div class="footactions">' +
           '<button class="tbtn primary" data-act="refresh">重新评估</button>' +
+          '<button class="tbtn" data-act="block" title="这个站点不再弹浮层，可在弹窗里解除">屏蔽此站</button>' +
           '<button class="tbtn" data-act="close" title="本次不再显示">×</button>' +
         "</div>" +
       "</div>";
@@ -450,6 +473,8 @@
             btn.disabled = false;
             btn.textContent = "重新评估";
           });
+        } else if (act === "block") {
+          blockSite(btn);
         } else if (act === "close") {
           hide(true);
         }

@@ -3,6 +3,7 @@
   const $ = (id) => document.getElementById(id);
   let tabId = null;
   let state = null;
+  let currentHost = "";
 
   init().catch(() => {});
 
@@ -20,6 +21,10 @@
       showUnsupported("页面还没就绪", "无法获取当前标签页。");
       return;
     }
+
+    // 误点「屏蔽此站」必须有退路：当前站点在黑名单里时给出解除入口
+    currentHost = hostnameOf(tab && tab.url);
+    renderUnblockRow(settings);
 
     let res = null;
     try {
@@ -41,7 +46,7 @@
     } else if (res.skipped === "off") {
       showUnsupported("浮层已关闭", "浮层已在设置里关闭。打开上方「页面浮层」开关即可恢复。");
     } else if (res.skipped === "blocked") {
-      showUnsupported("站点已跳过", "这个站点在「跳过评估」名单里。可以在设置里删掉对应规则。");
+      showUnsupported("站点已跳过评估", "此站点已跳过评估，浮层不再出现。点下方「解除屏蔽」即可恢复。");
     } else if (res.skipped === "not-readable") {
       showUnsupported("不是可读页面", "这不是一个可读的正文页（可能是应用页、登录页或非 HTML 内容）。");
     } else if (!res.result) {
@@ -165,6 +170,42 @@
     if (!parts.length) return null;
     const total = parts.reduce((a, p) => a + p[1], 0);
     return Math.round(parts.reduce((a, p) => a + p[0] * p[1], 0) / total);
+  }
+
+  /** 主机名是否被黑名单条目拦下：与 heuristics.isBlocked 的域名条目规则一致 */
+  function hostMatchesBlocklist(host, list) {
+    if (!host) return false;
+    return (list || []).some((entry) => {
+      const e = String(entry || "").toLowerCase();
+      if (!e) return false;
+      if (!e.includes("/") && e.includes(".") && !e.startsWith(".") && !e.endsWith(".")) {
+        return host === e || host.endsWith("." + e);
+      }
+      return false;
+    });
+  }
+
+  function hostnameOf(url) {
+    try {
+      return new URL(url).hostname.toLowerCase();
+    } catch (e) {
+      return "";
+    }
+  }
+
+  /** 当前站点已被屏蔽时显示解除入口；点击后从黑名单移除并给出反馈 */
+  function renderUnblockRow(settings) {
+    if (!currentHost) return;
+    if (!hostMatchesBlocklist(currentHost, (settings && settings.siteBlocklist) || [])) return;
+    $("unblockHost").textContent = currentHost;
+    $("unblockRow").hidden = false;
+    $("unblockBtn").addEventListener("click", async () => {
+      const cur = ((await RS.storage.getSettings()).siteBlocklist) || [];
+      const next = cur.filter((entry) => !hostMatchesBlocklist(currentHost, [entry]));
+      await RS.storage.saveSettings({ siteBlocklist: next });
+      $("unblockLabel").innerHTML = "已解除屏蔽<small>刷新页面后浮层会重新出现</small>";
+      $("unblockBtn").hidden = true;
+    });
   }
 
   function esc(s) {

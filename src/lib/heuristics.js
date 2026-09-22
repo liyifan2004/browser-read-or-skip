@@ -167,11 +167,31 @@
 
   /* ---------------- 主打分函数 ---------------- */
 
+  /**
+   * 黑名单匹配分两类：
+   * - 纯域名条目（不含 "/"、含 "."、且不以点开头结尾）：按主机名精确匹配，子域也算。
+   *   避免子串误杀——比如 "x.com" 会撞上 "netflix.com"。
+   * - 其余条目（"/login"、"/signin"、"login." 这类路径 / 前缀片段）：维持旧的子串匹配。
+   * 任一命中即 blocked。
+   */
   function isBlocked(url, settings) {
     if (!url) return true;
     const list = (settings && settings.siteBlocklist) || [];
     const lower = String(url).toLowerCase();
-    return list.some((p) => p && lower.includes(String(p).toLowerCase()));
+    let host = "";
+    try {
+      host = new URL(url).hostname.toLowerCase();
+    } catch (e) {
+      host = "";
+    }
+    return list.some((raw) => {
+      const entry = String(raw || "").toLowerCase();
+      if (!entry) return false;
+      if (!entry.includes("/") && entry.includes(".") && !entry.startsWith(".") && !entry.endsWith(".")) {
+        return !!host && (host === entry || host.endsWith("." + entry));
+      }
+      return lower.includes(entry);
+    });
   }
 
   /** 取元素可见文本长度。不用 innerText 单腿走路：部分文档类型 / 测试环境里它不存在。 */
