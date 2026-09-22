@@ -90,13 +90,13 @@ describe("popup / 渲染", () => {
     await popupReady(env);
 
     a.equal(env.doc.getElementById("vlabel").textContent, "值得认真读");
-    a.includes(env.doc.getElementById("ring").innerHTML, "88");
+    a.includes(env.doc.getElementById("score").textContent, "88");
     a.includes(env.doc.getElementById("vreason").textContent, "内容新且来源可信");
 
     const metrics = env.doc.getElementById("metrics").innerHTML;
     a.includes(metrics, "相关度");
     a.includes(metrics, "94%");
-    a.includes(metrics, "新信息程度");
+    a.includes(metrics, "新信息");
     a.includes(metrics, "可信度");
 
     const chips = env.doc.getElementById("chips").innerHTML;
@@ -123,17 +123,18 @@ describe("popup / 渲染", () => {
 
   it("各种「不评估」的原因都说清楚，而不是一句无力的失败", async () => {
     const cases = [
-      ["serp", "搜索结果页"],
-      ["off", "浮层已在设置里关闭"],
-      ["blocked", "跳过评估"],
-      ["not-readable", "不是"]
+      ["serp", "直接标在每条结果上", "搜索结果页"],
+      ["off", "浮层已在设置里关闭", "浮层已关闭"],
+      ["blocked", "跳过评估", "站点已跳过"],
+      ["not-readable", "不是", "不是可读页面"]
     ];
-    for (const [skipped, expect] of cases) {
+    for (const [skipped, expect, titleExpect] of cases) {
       const env = loadPage("src/popup/popup.html", {
         onTabsSendMessage: () => Promise.resolve({ ok: true, mounted: false, skipped, result: null, page: null })
       });
       await waitFor(() => !env.doc.getElementById("unsupported").hidden, { label: skipped + " 提示" });
       a.includes(env.doc.getElementById("udesc").textContent, expect, skipped + " 的说明不对");
+      a.includes(env.doc.getElementById("utitle").textContent, titleExpect, skipped + " 的标题不对");
       a.equal(env.doc.getElementById("card").hidden, true);
     }
   });
@@ -210,10 +211,10 @@ describe("popup / 交互", () => {
     a.ok(true);
   });
 
-  it("打开设置会请求后台打开设置页", async () => {
+  it("打开设置会请求后台打开设置页（入口收敛后只剩顶栏齿轮）", async () => {
     const env = loadPage("src/popup/popup.html", { onTabsSendMessage: () => Promise.resolve(hudState()) });
     await popupReady(env);
-    env.doc.getElementById("openOptions").dispatchEvent(new env.win.MouseEvent("click", { bubbles: true }));
+    env.doc.getElementById("gear").dispatchEvent(new env.win.MouseEvent("click", { bubbles: true }));
     await sleep(30);
     a.equal(env.chrome.__log.openOptions, 1);
   });

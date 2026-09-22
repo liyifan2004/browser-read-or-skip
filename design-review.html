@@ -1,0 +1,980 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Read or Skip · UI/UX 设计审查</title>
+<style>
+/* ==========================================================================
+   审查报告自身的视觉系统 —— 演示"极简高审美"的那套规则
+   无渐变 / 无辉光 / 无玻璃 / 只有一个强调色 / 圆角 2 档 / 间距 4 的倍数
+   ========================================================================== */
+:root{
+  --canvas:#0C0E13; --surface:#15181E; --surface-2:#1E222A; --field:#0A0C10;
+  --border:#262B34; --border-2:#333944;
+  --text:#EDEFF4; --text-2:#9CA4B3; --text-3:#8D96A6;
+  --accent:#3B82F6; --focus:#7FB0FF;
+  --read:#4ADE9E; --skim:#F2C14E; --skip:#A7B0BE;
+  --warn:#FBBF24; --danger:#FD8A9B;
+  --r-ctl:8px; --r-box:12px;
+  --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px; --s7:48px; --s8:64px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-text-size-adjust:100%}
+body{
+  background:var(--canvas); color:var(--text);
+  font:400 14px/1.75 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei","Helvetica Neue",Arial,sans-serif;
+  -webkit-font-smoothing:antialiased; letter-spacing:0;
+}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:2px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+.wrap{max-width:1120px;margin:0 auto;padding:var(--s8) var(--s6) 96px}
+@media (max-width:720px){.wrap{padding:var(--s6) var(--s4) 64px}}
+
+/* ---------- 通用排版 ---------- */
+.eyebrow{font-size:12px;font-weight:600;color:var(--text-3);letter-spacing:0}
+h1{font-size:34px;font-weight:600;line-height:1.25;margin-top:var(--s2)}
+h2{font-size:20px;font-weight:600;line-height:1.4}
+h3{font-size:14px;font-weight:600;line-height:1.5}
+p{color:var(--text-2)}
+.lede{font-size:15px;color:var(--text-2);max-width:64ch;margin-top:var(--s3)}
+section{margin-top:var(--s8)}
+.sechead{display:flex;align-items:baseline;gap:var(--s3);padding-bottom:var(--s3);border-bottom:1px solid var(--border)}
+.sechead .n{font-size:12px;font-variant-numeric:tabular-nums;color:var(--text-3);font-weight:600}
+.sechead p{margin-left:auto;font-size:12.5px;color:var(--text-3);text-align:right}
+@media (max-width:720px){.sechead p{display:none}}
+code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:0.88em}
+code{background:var(--surface-2);border-radius:4px;padding:1px 5px;color:#C9D4E2}
+.num{font-variant-numeric:tabular-nums}
+hr{border:0;border-top:1px solid var(--border);margin:var(--s5) 0}
+
+/* ---------- 结论条 ---------- */
+.verdict{display:grid;grid-template-columns:auto 1fr;gap:var(--s6);align-items:start;
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--r-box);padding:var(--s5);margin-top:var(--s5)}
+.score{display:flex;flex-direction:column;gap:var(--s1);min-width:132px}
+.score .big{font-size:52px;font-weight:600;line-height:1;font-variant-numeric:tabular-nums;color:var(--danger)}
+.score .cap{font-size:12px;color:var(--text-3)}
+.score .badge{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;
+  color:var(--danger);border:1px solid rgba(253,138,155,.4);border-radius:var(--r-ctl);padding:4px 8px;width:max-content;margin-top:var(--s2)}
+.verdict .body{display:flex;flex-direction:column;gap:var(--s3)}
+.verdict .body p{font-size:14.5px}
+.verdict .body b{color:var(--text);font-weight:600}
+@media (max-width:720px){.verdict{grid-template-columns:1fr;gap:var(--s4)}}
+
+/* ---------- 表格 ---------- */
+table{width:100%;border-collapse:collapse;margin-top:var(--s4);font-size:13px}
+th{text-align:left;font-size:12px;font-weight:600;color:var(--text-3);padding:0 var(--s3) var(--s2) 0;
+  border-bottom:1px solid var(--border);vertical-align:bottom}
+td{padding:var(--s3) var(--s3) var(--s3) 0;border-bottom:1px solid var(--border);vertical-align:top;color:var(--text-2)}
+td:last-child,th:last-child{padding-right:0}
+tr td:first-child{color:var(--text)}
+td.n{font-variant-numeric:tabular-nums;white-space:nowrap}
+.pass{color:var(--read);font-weight:600}
+.fail{color:var(--danger);font-weight:600}
+.na{color:var(--text-3)}
+.tag{display:inline-block;font-size:11px;font-weight:600;padding:2px 7px;border-radius:6px;white-space:nowrap}
+.tag.p0{background:rgba(253,138,155,.12);border:1px solid rgba(253,138,155,.42);color:#FDB4BE}
+.tag.p1{background:rgba(251,191,36,.12);border:1px solid rgba(251,191,36,.42);color:#FCD66B}
+.tag.p2{background:rgba(167,176,190,.12);border:1px solid rgba(167,176,190,.35);color:#BEC6D2}
+
+/* ---------- 前后对比 ---------- */
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:var(--s5);margin-top:var(--s5)}
+@media (max-width:900px){.pair{grid-template-columns:1fr}}
+.lane{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-box);overflow:hidden;display:flex;flex-direction:column}
+.lane > header{display:flex;align-items:center;gap:var(--s2);padding:var(--s3) var(--s4);border-bottom:1px solid var(--border)}
+.lane > header .k{font-size:12px;font-weight:600}
+.lane.before > header .k{color:var(--danger)}
+.lane.after  > header .k{color:var(--read)}
+.lane > header .d{margin-left:auto;font-size:11.5px;color:var(--text-3)}
+.lane .stage{padding:var(--s5);display:flex;justify-content:center;align-items:flex-start;min-height:180px;flex:1}
+.lane .note{padding:0 var(--s4) var(--s4);font-size:12px;color:var(--text-3);line-height:1.7}
+.lane .note ul{list-style:none;display:flex;flex-direction:column;gap:5px}
+.lane .note li{padding-left:14px;position:relative}
+.lane .note li::before{content:"";position:absolute;left:0;top:8px;width:5px;height:1px;background:var(--text-3)}
+.lane.after .note li::before{background:var(--read)}
+
+/* ==========================================================================
+   现状复刻（verbatim 自 src/content/hud.js 的 CSS，仅加 o- 前缀）
+   ========================================================================== */
+.o-card{width:340px;border-radius:18px;overflow:hidden;
+  background:linear-gradient(180deg,rgba(24,27,34,.96),rgba(16,18,23,.97));
+  border:1px solid rgba(255,255,255,.09);
+  box-shadow:0 18px 48px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.06);
+  color:#E8EAF0;font-size:13px;line-height:1.5}
+.o-card::before{content:"";display:block;height:2px;
+  background:linear-gradient(90deg,transparent,var(--accent),transparent);opacity:.9}
+.o-head{display:flex;align-items:center;gap:12px;padding:14px 14px 12px}
+.o-ring{position:relative;width:52px;height:52px;flex:none}
+.o-ring .num{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-size:14px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.3px}
+.o-ring .num small{font-size:9px;font-weight:600;opacity:.6;margin-left:1px}
+.o-headtext{flex:1;min-width:0}
+.o-verdict{font-size:16px;font-weight:700;letter-spacing:.2px;color:var(--read);display:flex;align-items:center;gap:6px}
+.o-src{font-size:10px;font-weight:600;color:#9AA1AE;border:1px solid rgba(255,255,255,.14);border-radius:5px;padding:1px 5px}
+.o-reason{font-size:11.5px;color:#A6ADBB;margin-top:3px}
+.o-iconbtn{flex:none;width:26px;height:26px;border-radius:8px;border:1px solid rgba(255,255,255,.10);
+  background:rgba(255,255,255,.04);color:#A6ADBB;display:grid;place-items:center}
+.o-metrics{padding:0 14px 4px;display:flex;flex-direction:column;gap:9px}
+.o-metric{display:grid;grid-template-columns:62px 1fr 42px;align-items:center;gap:9px}
+.o-mlabel{font-size:11.5px;color:#98A0AE;white-space:nowrap}
+.o-track{height:6px;border-radius:3px;background:rgba(255,255,255,.075);overflow:hidden;position:relative}
+.o-fill{height:100%;border-radius:3px;background:linear-gradient(90deg,var(--read),#7FE8C0);position:relative}
+.o-fill::after{content:"";position:absolute;inset:0;border-radius:3px;
+  background:linear-gradient(180deg,rgba(255,255,255,.28),transparent 60%)}
+.o-mval{font-size:12px;font-variant-numeric:tabular-nums;text-align:right;color:#D6DAE3;font-weight:600}
+.o-chips{display:flex;flex-wrap:wrap;gap:6px;padding:12px 14px 0}
+.o-chip{font-size:11px;padding:3px 8px;border-radius:7px;background:rgba(255,255,255,.05);
+  border:1px solid rgba(255,255,255,.08);color:#A6ADBB;white-space:nowrap}
+.o-chip b{color:#E8EAF0;font-weight:600}
+.o-chip.hi{background:rgba(52,211,153,.10);border-color:rgba(52,211,153,.26);color:#6EE7B7}
+.o-chip.mid{background:rgba(251,191,36,.10);border-color:rgba(251,191,36,.26);color:#FCD34D}
+.o-chip.lo{background:rgba(148,163,184,.10);border-color:rgba(148,163,184,.22);color:#A9B4C4}
+.o-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:12px;
+  padding:10px 14px;border-top:1px solid rgba(255,255,255,.07);background:rgba(0,0,0,.14)}
+.o-footmeta{font-size:10.5px;color:#7C8494;white-space:nowrap}
+.o-tbtn{font-size:11px;font-family:inherit;padding:4px 9px;border-radius:7px;
+  background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.10);color:#B7BECC;white-space:nowrap}
+.o-tbtn.primary{background:rgba(96,165,250,.14);border-color:rgba(96,165,250,.32);color:#93C5FD}
+
+/* ==========================================================================
+   重构方案（本报告提议的系统）
+   ========================================================================== */
+.n-card{width:340px;border-radius:var(--r-box);overflow:hidden;background:var(--surface);
+  border:1px solid var(--border);box-shadow:0 12px 32px rgba(0,0,0,.44);color:var(--text)}
+.n-top{height:2px;background:rgba(255,255,255,.07)}
+.n-top i{display:block;height:100%;width:87%;background:var(--read)}
+.n-head{display:flex;align-items:flex-start;gap:var(--s3);padding:var(--s4) var(--s4) var(--s3)}
+.n-verdict{font-size:20px;font-weight:600;line-height:1.2;color:var(--read)}
+.n-tag{font-size:11.5px;color:var(--text-3);margin-top:var(--s1)}
+.n-score{font-size:13px;font-weight:600;font-variant-numeric:tabular-nums;color:var(--text-2);
+  margin-left:auto;padding-top:2px}
+.n-close{flex:none;width:24px;height:24px;border-radius:6px;border:1px solid var(--border);
+  background:none;color:var(--text-3);display:grid;place-items:center}
+.n-metrics{padding:0 var(--s4) var(--s3);display:flex;flex-direction:column;gap:var(--s3)}
+.n-metric{display:grid;grid-template-columns:72px 1fr 34px;align-items:center;gap:var(--s3)}
+.n-mlabel{font-size:12px;color:var(--text-2)}
+.n-track{height:2px;background:rgba(255,255,255,.08)}
+.n-fill{height:100%;background:var(--read)}
+.n-mval{font-size:12px;font-variant-numeric:tabular-nums;color:var(--text-2);text-align:right}
+.n-meta{padding:0 var(--s4) var(--s3);font-size:12px;color:var(--text-3);
+  display:flex;flex-wrap:wrap;align-items:center;gap:var(--s2)}
+.n-meta i{width:3px;height:3px;border-radius:50%;background:var(--border-2);display:block}
+.n-foot{display:flex;align-items:center;gap:var(--s2);padding:var(--s3) var(--s4);
+  border-top:1px solid var(--border)}
+.n-foot .sp{font-size:12px;color:var(--text-3);margin-right:auto}
+.n-btn{font-family:inherit;font-size:12.5px;height:32px;padding:0 var(--s3);border-radius:var(--r-ctl);
+  background:none;border:1px solid var(--border-2);color:var(--text-2)}
+.n-btn.primary{border-color:transparent;background:var(--accent);color:#fff;font-weight:600}
+
+/* ---------- popup 头部对比 ---------- */
+.p-top{display:flex;align-items:center;justify-content:space-between;padding:var(--s3) var(--s4);width:340px}
+.p-top.o{background:linear-gradient(180deg,#1e222a,#171a20);border-bottom:1px solid rgba(255,255,255,.08)}
+.p-top.n{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-box)}
+.p-brand{display:flex;align-items:center;gap:var(--s2)}
+.p-logo{width:28px;height:28px;border-radius:var(--r-ctl);display:grid;place-items:center}
+.p-logo.o{background:linear-gradient(140deg,#3b82f6,#8b5cf6);box-shadow:0 3px 10px rgba(59,130,246,.35)}
+.p-logo.n{background:#3B82F6}
+.p-name{font-weight:600;font-size:13.5px}
+.p-gear{width:28px;height:28px;border-radius:var(--r-ctl);display:grid;place-items:center}
+.p-gear.o{border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.04);color:#98a0ae}
+.p-gear.n{border:1px solid var(--border-2);color:var(--text-2)}
+
+/* ---------- 图标对比 ---------- */
+.icons{display:flex;gap:var(--s5);flex-wrap:wrap}
+.iconswatches{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--s4);margin-top:var(--s4)}
+.iconrow{background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-ctl);padding:var(--s4);text-align:center}
+.iconrow .cap{font-size:11.5px;color:var(--text-3);margin-top:var(--s2)}
+.toolbar-light{background:#DEE1E6;border-radius:var(--r-ctl);padding:var(--s3);display:flex;align-items:center;justify-content:center;gap:var(--s3)}
+.toolbar-dark{background:#35363A;border-radius:var(--r-ctl);padding:var(--s3);display:flex;align-items:center;justify-content:center;gap:var(--s3)}
+.toolbar-cap{font-size:11.5px;color:var(--text-3);text-align:center;margin-top:6px}
+
+/* ---------- 徽章对比 ---------- */
+.badge-stage{border-radius:var(--r-ctl);padding:var(--s4);display:flex;flex-direction:column;gap:var(--s3)}
+.badge-stage.light{background:#ffffff}
+.badge-stage.dark{background:#202124}
+.badge-stage .rcap{font-size:11.5px;color:#5B6472}
+.badge-stage.dark .rcap{color:#9AA0A6}
+.brow{display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap}
+.serp-chip{display:inline-flex;align-items:center;gap:4px;font-weight:600;font-size:11px;line-height:1.5;
+  padding:1px 7px;border-radius:6px;white-space:nowrap;position:relative;top:-1px;letter-spacing:.2px}
+.serp-chip.new{font-size:12px;padding:2px 8px;border-radius:4px;top:0;letter-spacing:0}
+.serp-sum{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:9px 12px;border-radius:10px;font-size:12px;font-weight:500}
+.serp-sum.new{padding:10px 12px;border-radius:var(--r-ctl);font-size:12.5px}
+.dotc{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;vertical-align:middle}
+
+/* ---------- finding 列表 ---------- */
+.finding{border-top:1px solid var(--border)}
+.finding:last-child{border-bottom:1px solid var(--border)}
+.finding > summary{list-style:none;cursor:pointer;display:grid;grid-template-columns:auto 1fr auto;
+  gap:var(--s3);align-items:start;padding:var(--s4) 0}
+.finding > summary::-webkit-details-marker{display:none}
+.finding > summary:hover .f-title{color:var(--text)}
+.finding .f-title{font-size:14px;font-weight:600;color:var(--text);line-height:1.55}
+.finding .f-sub{font-size:12.5px;color:var(--text-3);margin-top:3px}
+.finding .chev{color:var(--text-3);font-size:12px;padding-top:3px;transition:transform .15s ease}
+.finding[open] .chev{transform:rotate(90deg)}
+.fbody{padding:0 0 var(--s5) 0;display:grid;gap:var(--s3)}
+.frow{display:grid;grid-template-columns:104px 1fr;gap:var(--s3);font-size:13px}
+.frow .k{font-size:12px;font-weight:600;color:var(--text-3);padding-top:2px}
+.frow .v{color:var(--text-2)}
+.frow .v b{color:var(--text);font-weight:600}
+.ev{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;
+  background:var(--field);border:1px solid var(--border);border-radius:var(--r-ctl);
+  padding:var(--s3);color:#C9D4E2;overflow-x:auto;white-space:pre;line-height:1.7}
+.ev .del{color:#FDB4BE}
+.ev .add{color:var(--read)}
+.ev .cm{color:var(--text-3)}
+@media (max-width:720px){.frow{grid-template-columns:1fr;gap:var(--s1)}}
+
+/* ---------- 令牌 ---------- */
+.swatches{display:grid;grid-template-columns:repeat(auto-fill,minmax(196px,1fr));gap:var(--s3);margin-top:var(--s5)}
+.sw{display:flex;gap:var(--s3);align-items:center;background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--r-ctl);padding:var(--s3)}
+.sw .chip{width:32px;height:32px;border-radius:6px;flex:none;border:1px solid rgba(255,255,255,.10)}
+.sw .nm{font-size:12.5px;font-weight:600}
+.sw .hx{font-size:11.5px;color:var(--text-3);font-family:ui-monospace,Menlo,Consolas,monospace}
+.copybar{display:flex;align-items:center;gap:var(--s3);margin-top:var(--s4)}
+.copybtn{font-family:inherit;font-size:12px;height:30px;padding:0 var(--s3);border-radius:6px;
+  background:var(--surface-2);border:1px solid var(--border-2);color:var(--text-2);cursor:pointer}
+.copybtn:hover{color:var(--text);border-color:var(--text-3)}
+
+/* ---------- 顺序列表 ---------- */
+ol.steps{list-style:none;margin-top:var(--s4);display:flex;flex-direction:column;gap:var(--s3);counter-reset:s}
+ol.steps li{counter-increment:s;display:grid;grid-template-columns:28px 1fr;gap:var(--s3);font-size:13.5px;color:var(--text-2)}
+ol.steps li::before{content:counter(s);font-size:12px;font-weight:600;color:var(--text-3);
+  font-variant-numeric:tabular-nums;padding-top:2px}
+ol.steps li b{color:var(--text);font-weight:600}
+footer{margin-top:var(--s8);padding-top:var(--s4);border-top:1px solid var(--border);
+  font-size:12px;color:var(--text-3);display:flex;flex-wrap:wrap;gap:var(--s3) var(--s5)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">UI/UX 设计审查 · Read or Skip v1.0.0 · Manifest V3</div>
+    <h1>方向是对的，基础层是坏的</h1>
+    <p class="lede">
+      这个扩展的产品判断很准——把一次 400 毫秒内的裁决做成悬浮层，信息模型（相关度/新信息/可信度/时效性 → 三档结论）也是扎实的。
+      问题全部不在「想得对不对」，而在<b>视觉系统与显隐机制没有被建立起来</b>：颜色账本是混的、<code>[hidden]</code> 是失效的、
+      快捷键是双触发的、搜索结果徽章在真实页面上是不可读的。下面每一条都附了实测数字。
+    </p>
+  </header>
+
+  <!-- ================= 结论 ================= -->
+  <section>
+    <div class="sechead"><span class="n">01</span><h2>审查结论</h2><p>依据：静态审查 + 本地实测对比度 + jsdom 渲染验证</p></div>
+
+    <div class="verdict">
+      <div class="score">
+        <div class="big num">45</div>
+        <div class="cap">有效分 / 100</div>
+        <div class="badge">硬门槛 2 项失败 · NOT PASS</div>
+      </div>
+      <div class="body">
+        <p>
+          <b>先看硬门槛。</b>分数本身不重要——只要有任何一条硬门槛失败，结论就是不放行。
+          本次失败两条：<b>① 文字对比度</b>（搜索结果四档徽章在浅色页上实测 1.55–4.17:1，全部低于 4.5:1；
+          其中三个等级色低于 2.3:1，等同于不可读）；<b>② 键盘焦点</b>（全局没有任何 <code>:focus-visible</code> 样式，
+          纯键盘用户看不到自己在哪里）。
+        </p>
+        <p>
+          <b>再看分数为什么这么低。</b>不是审美不够，是系统缺失。三个最贵的症状：
+          所有依赖 <code>hidden</code> 属性的显隐全部失效（4 个容器漏出，结果卡顶部会永久挂着一行「正在读取当前页面…」）；
+          同一套判定色同时承担「结论等级」和「数值高低」两种语义，导致色彩无法被信任；
+          <code>Alt+Shift+R</code> 被内容脚本和浏览器命令各触发一次，净效果等于快捷键没反应。
+        </p>
+        <p>
+          <b>但有一个维度做得明显好：内容与反馈。</b>错误分类（404/401/422/429/529）、退避重试、本地估算与模型结果的诚实标注、
+          每种「不弹浮层」的原因都会告诉用户为什么——这套文案逻辑比绝大多数同类扩展考究。重构时应原样保留。
+        </p>
+      </div>
+    </div>
+
+    <table>
+      <thead><tr><th>维度</th><th>权重</th><th>评分</th><th>得分</th><th>最高影响的一条修正</th></tr></thead>
+      <tbody>
+        <tr><td>产品目标与体验</td><td class="n">20</td><td class="n">3 / 5</td><td class="n">12</td><td>修掉快捷键双触发；自动收起时不打断键盘焦点</td></tr>
+        <tr><td>信息架构与布局</td><td class="n">15</td><td class="n">3 / 5</td><td class="n">9</td><td>设置入口从 4 处收敛到 2 处（顶栏齿轮 + 设置页内）</td></tr>
+        <tr><td>视觉层级与留白</td><td class="n">15</td><td class="n">2 / 5</td><td class="n">6</td><td>删掉综合分圆环，让「判定词」成为唯一的第一视觉</td></tr>
+        <tr><td>字体排版</td><td class="n">10</td><td class="n">2 / 5</td><td class="n">4</td><td>中文小字从 10.5 / 11px 提到 12px，删掉低对比的第三级文字色</td></tr>
+        <tr><td>色彩</td><td class="n">10</td><td class="n">1 / 5</td><td class="n">2</td><td>判定色只管结论，数值条一律用单一强调色；徽章改深字浅底 + 明暗双套</td></tr>
+        <tr><td>组件与图标</td><td class="n">10</td><td class="n">2 / 5</td><td class="n">4</td><td>加 <code>[hidden]{display:none!important}</code> 兜底；图标换掉对勾</td></tr>
+        <tr><td>内容与反馈</td><td class="n">10</td><td class="n">3 / 5</td><td class="n">6</td><td>统一术语「估算中 / 评估中」；去掉 emoji 占位</td></tr>
+        <tr><td>响应式与可访问性</td><td class="n">10</td><td class="n">1 / 5</td><td class="n">2</td><td>全局焦点环 + <code>prefers-reduced-motion</code> + 命中区补到 44px</td></tr>
+        <tr><td colspan="3"><b>原始分</b></td><td class="n">45</td><td>有效分同为 45（原始分已低于硬门槛上限 59）</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ================= 硬门槛 ================= -->
+  <section>
+    <div class="sechead"><span class="n">02</span><h2>硬门槛</h2><p>任一失败即 NOT PASS，高分无法补偿</p></div>
+    <table>
+      <thead><tr><th>门槛</th><th>判定</th><th>证据</th></tr></thead>
+      <tbody>
+        <tr><td>核心任务可完成</td><td class="pass">通过</td><td>浮层与结果页标注主路径均可用</td></tr>
+        <tr><td>无遮挡 / 裁切 / 溢出</td><td class="pass">通过</td><td>卡片可拖动、可收起；<code>applyPosition</code> 做了边界夹紧</td></tr>
+        <tr><td>文字与控件边界对比度</td><td class="fail">失败</td><td>搜索徽章 read 1.75:1 · skim 1.55:1 · skip 2.29:1 · pending 4.17:1（浅色宿主页实测）</td></tr>
+        <tr><td>键盘焦点可见</td><td class="fail">失败</td><td>三个页面均无 <code>:focus-visible</code> 规则，Tab 到按钮无任何视觉反馈</td></tr>
+        <tr><td>加载 / 空 / 成功 / 错误 / 恢复状态齐全</td><td class="pass">通过</td><td>状态覆盖完整，错误分类与重试策略明确</td></tr>
+        <tr><td>高风险动作标明对象与后果</td><td class="pass">通过</td><td>清空缓存 / 恢复默认均有明确文案</td></tr>
+        <tr><td>Logo / 资源授权明确</td><td class="na">N/A</td><td>图标由仓库内脚本生成，无第三方资产；系统字体栈，无字体授权依赖</td></tr>
+        <tr><td>数据与声明真实</td><td class="pass">通过</td><td>README 的耗时与成本均为本机实测并注明条件</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ================= 前后对比 ================= -->
+  <section>
+    <div class="sechead"><span class="n">03</span><h2>现状 vs 重构</h2><p>以下全部是真实渲染，不是效果图</p></div>
+
+    <h3 style="margin-top:var(--s5)">3.1　页面浮层 —— 判定卡</h3>
+    <div class="pair">
+      <div class="lane before">
+        <header><span class="k">现状</span><span class="d">348px · 6 条边界线索</span></header>
+        <div class="stage">
+          <div class="o-card" style="--accent:#4ADE9E;--read:#4ADE9E">
+            <div class="o-head">
+              <div class="o-ring">
+                <svg width="52" height="52" viewBox="0 0 52 52"><defs><linearGradient id="g1" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0" stop-color="#4ADE9E"/><stop offset="1" stop-color="#7FE8C0"/></linearGradient></defs>
+                  <circle cx="26" cy="26" r="23" fill="none" stroke="rgba(255,255,255,.09)" stroke-width="4.5"/>
+                  <circle cx="26" cy="26" r="23" fill="none" stroke="url(#g1)" stroke-width="4.5" stroke-linecap="round"
+                    stroke-dasharray="125.7 144.5" transform="rotate(-90 26 26)"/></svg>
+                <div class="num" style="color:#4ADE9E">87<small>%</small></div>
+              </div>
+              <div class="o-headtext">
+                <div class="o-verdict">值得认真读<span class="o-src">jev 1.13.0</span></div>
+                <div class="o-reason">与你的关注主题高度相关，且包含一手实测数据。</div>
+              </div>
+              <div class="o-iconbtn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M5 12h14"/></svg></div>
+            </div>
+            <div class="o-metrics">
+              <div class="o-metric"><span class="o-mlabel">相关度</span><span class="o-track"><span class="o-fill" style="width:92%;display:block"></span></span><span class="o-mval">92%</span></div>
+              <div class="o-metric"><span class="o-mlabel">新信息程度</span><span class="o-track"><span class="o-fill" style="width:74%;display:block"></span></span><span class="o-mval">74%</span></div>
+              <div class="o-metric"><span class="o-mlabel">可信度</span><span class="o-track"><span class="o-fill" style="width:91%;display:block"></span></span><span class="o-mval">91%</span></div>
+              <div class="o-metric"><span class="o-mlabel">时效性</span><span class="o-track"><span class="o-fill" style="width:60%;display:block"></span></span><span class="o-mval">60%</span></div>
+            </div>
+            <div class="o-chips">
+              <span class="o-chip hi">阅读价值 <b>高</b></span>
+              <span class="o-chip">深度分析</span>
+              <span class="o-chip">约 <b>7</b> 分钟</span>
+            </div>
+            <div class="o-foot">
+              <div class="o-footmeta">耗时 342ms · 3,180 字 · simonwillison.net</div>
+              <div style="display:flex;gap:6px">
+                <span class="o-tbtn primary">重新评估</span><span class="o-tbtn">设置</span><span class="o-tbtn">×</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="note"><ul>
+          <li>圆环占 52×52 的视觉重量，却只承载一个数字；且判定词、环色、环内数字三处重复同一信息</li>
+          <li>6 条边界线索叠在一张卡上：背景渐变 / 1px 边框 / inset 高光 / 外投影 / backdrop-blur / 顶部渐变光条</li>
+          <li>4 根 6px 圆头渐变条 + 内高光，色相只用来表示「高低」，与判定色抢语义</li>
+          <li>chip 有 4 种色相（hi / mid / lo / warn），其中 mid 与 warn 定义完全相同</li>
+          <li>大量 10.5–11.5px 小字，中文笔画在 Windows 上发糊</li>
+        </ul></div>
+      </div>
+      <div class="lane after">
+        <header><span class="k">重构</span><span class="d">340px · 3 条边界线索</span></header>
+        <div class="stage">
+          <div class="n-card">
+            <div class="n-top"><i></i></div>
+            <div class="n-head">
+              <div style="min-width:0">
+                <div class="n-verdict">值得认真读</div>
+                <div class="n-tag">与你的主题高度相关 · 含一手实测数据</div>
+              </div>
+              <div class="n-score">87</div>
+              <div class="n-close"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 12h14"/></svg></div>
+            </div>
+            <div class="n-metrics">
+              <div class="n-metric"><span class="n-mlabel">相关度</span><span class="n-track"><span class="n-fill" style="width:92%;display:block"></span></span><span class="n-mval">92</span></div>
+              <div class="n-metric"><span class="n-mlabel">新信息</span><span class="n-track"><span class="n-fill" style="width:74%;display:block"></span></span><span class="n-mval">74</span></div>
+              <div class="n-metric"><span class="n-mlabel">可信度</span><span class="n-track"><span class="n-fill" style="width:91%;display:block"></span></span><span class="n-mval">91</span></div>
+              <div class="n-metric"><span class="n-mlabel">时效性</span><span class="n-track"><span class="n-fill" style="width:60%;display:block"></span></span><span class="n-mval">60</span></div>
+            </div>
+            <div class="n-meta">阅读价值 高<i></i>深度分析<i></i>约 7 分钟</div>
+            <div class="n-foot">
+              <span class="sp">耗时 342ms · 3,180 字</span>
+              <span class="n-btn primary">重新评估</span>
+            </div>
+          </div>
+        </div>
+        <div class="note"><ul>
+          <li><b>顶部 2px 条就是综合分</b>——它取代了原来的装饰性渐变光条，同一个像素位同时完成「去装饰」和「加信息」</li>
+          <li>删掉圆环。第一视觉变成判定词（20px），分数降级为标题行右端的 13px 等宽数字</li>
+          <li>4 根 2px <b>直角</b>细条，统一用判定色，不再按数值换色相；数值不再加粗、不再变色</li>
+          <li>chip 变成一行 <code>·</code> 分隔的纯文本，只有警告类才配得上描边</li>
+          <li>全部小字回到 12px；卡片改不透明填充，性能上不再需要 backdrop-filter</li>
+        </ul></div>
+      </div>
+    </div>
+
+    <h3 style="margin-top:var(--s7)">3.2　工具栏弹窗 —— 顶栏</h3>
+    <div class="pair">
+      <div class="lane before">
+        <header><span class="k">现状</span><span class="d">渐变 logo + 彩色辉光</span></header>
+        <div class="stage" style="padding:var(--s4)">
+          <div class="p-top o">
+            <div class="p-brand">
+              <span class="p-logo o"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#fff" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h6a3 3 0 0 1 3 3v13a2.5 2.5 0 0 0-2.5-2.5H2z"/><path d="M22 4h-6a3 3 0 0 0-3 3v13a2.5 2.5 0 0 1 2.5-2.5H22z"/></svg></span>
+              <span class="p-name">Read or Skip</span>
+            </div>
+            <span class="p-gear o"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></span>
+            <span style="width:0"></span>
+          </div>
+        </div>
+        <div class="note"><ul>
+          <li>logo 是<b>书本</b>图标，而扩展工具栏图标是<b>对勾</b>——同一产品两个符号</li>
+          <li>蓝紫渐变 + 彩色投影是纯氛围层，不承担任何信息</li>
+          <li>齿轮 26×26，触屏命中区不足</li>
+        </ul></div>
+      </div>
+      <div class="lane after">
+        <header><span class="k">重构</span><span class="d">单色 + 与 UI 同源</span></header>
+        <div class="stage" style="padding:var(--s4)">
+          <div class="p-top n">
+            <div class="p-brand">
+              <span class="p-logo n" id="logoSlot"></span>
+              <span class="p-name">Read or Skip</span>
+            </div>
+            <span class="p-gear n"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></span>
+            <span style="width:0"></span>
+          </div>
+        </div>
+        <div class="note"><ul>
+          <li>同一个标记用在三处（工具栏图标 / 弹窗 / 设置页），符号不再分裂</li>
+          <li><b>单色 <code>#3B82F6</code></b>，去掉渐变与辉光——把色相预算整块留给界面里的三档判定语义</li>
+          <li>齿轮视觉 28px，用伪元素把命中区补到 44px</li>
+        </ul></div>
+      </div>
+    </div>
+
+    <h3 style="margin-top:var(--s7)">3.3　搜索结果徽章 —— 本次最严重的缺陷</h3>
+    <p style="margin-top:var(--s3);font-size:13.5px">
+      现状把深色 UI 的判定色直接当作<b>白色背景上的文字色</b>使用。亮绿、亮琥珀、灰蓝在浅色底上永远达不到 4.5:1。
+      下面两组是同样的四档徽章，在真实宿主页背景上渲染。
+    </p>
+    <div class="pair">
+      <div class="lane before">
+        <header><span class="k">现状</span><span class="d">浅色结果页实测</span></header>
+        <div class="stage" style="padding:var(--s4);display:block">
+          <div class="badge-stage light">
+            <div class="rcap">google.com/search · 浅色</div>
+            <div class="brow">
+              <span class="serp-chip" style="background:rgba(52,211,153,.14);color:#34D399;border:1px solid rgba(52,211,153,.42)">值得读 · 91%</span>
+              <span class="serp-chip" style="background:rgba(251,191,36,.14);color:#FBBF24;border:1px solid rgba(251,191,36,.42)">快速扫 · 68%</span>
+              <span class="serp-chip" style="background:rgba(148,163,184,.14);color:#94A3B8;border:1px solid rgba(148,163,184,.42)">可跳过 · 41%</span>
+              <span class="serp-chip" style="background:rgba(148,163,184,.16);color:#64748B;border:1px solid rgba(148,163,184,.35)">…</span>
+            </div>
+            <div class="serp-sum" style="background:linear-gradient(180deg,rgba(96,165,250,.10),rgba(96,165,250,.04));border:1px solid rgba(96,165,250,.28);color:#334155">
+              <span style="font-weight:700;color:#1D4ED8">Read or Skip</span>
+              <span style="opacity:.35">|</span>
+              <span><span class="dotc" style="background:#34D399"></span>值得读 <b>3</b></span>
+              <span><span class="dotc" style="background:#FBBF24"></span>可扫 <b>4</b></span>
+              <span><span class="dotc" style="background:#94A3B8"></span>可跳过 <b>5</b></span>
+            </div>
+          </div>
+        </div>
+        <div class="note"><ul>
+          <li>read <b>1.75:1</b> · skim <b>1.55:1</b> · skip <b>2.29:1</b> · pending <b>4.17:1</b>——四档全部低于 4.5:1</li>
+          <li>低于 2.3:1 在户外或低亮度屏幕上等同不可读，而徽章只有 11px</li>
+          <li>四个等级靠色相区分，<b>没有任何非颜色的区分线索</b>（形状/位置/字重全部相同）</li>
+        </ul></div>
+      </div>
+      <div class="lane after">
+        <header><span class="k">重构</span><span class="d">深字浅底 + 明暗双套</span></header>
+        <div class="stage" style="padding:var(--s4);display:block">
+          <div class="badge-stage light">
+            <div class="rcap">google.com/search · 浅色</div>
+            <div class="brow">
+              <span class="serp-chip new" style="background:#D1FAE5;color:#065F46">值得读 · 91%</span>
+              <span class="serp-chip new" style="background:#FEF3C7;color:#78350F">快速扫 · 68%</span>
+              <span class="serp-chip new" style="background:#E2E8F0;color:#334155">可跳过 · 41%</span>
+              <span class="serp-chip new" style="background:#EEF1F5;color:#475569">…</span>
+            </div>
+            <div class="serp-sum new" style="background:#EDF3FC;border:1px solid #C9DAF4;color:#1E293B">
+              <span style="font-weight:600;color:#1D4ED8">Read or Skip</span>
+              <span style="color:#94A3B8">·</span>
+              <span><span class="dotc" style="background:#047857"></span>值得读 <b style="color:#065F46">3</b></span>
+              <span><span class="dotc" style="background:#B45309"></span>可扫 <b style="color:#78350F">4</b></span>
+              <span><span class="dotc" style="background:#64748B"></span>可跳过 <b style="color:#334155">5</b></span>
+            </div>
+          </div>
+          <div class="badge-stage dark" style="margin-top:var(--s3)">
+            <div class="rcap">同样的徽章 · 深色结果页</div>
+            <div class="brow">
+              <span class="serp-chip new" style="background:#153B32;color:#6EE7B7">值得读 · 91%</span>
+              <span class="serp-chip new" style="background:#45291B;color:#FCD34D">快速扫 · 68%</span>
+              <span class="serp-chip new" style="background:#282E39;color:#CBD5E1">可跳过 · 41%</span>
+            </div>
+            <div class="serp-sum new" style="background:rgba(29,78,216,.14);border:1px solid rgba(147,197,253,.28);color:#CBD5E1">
+              <span style="font-weight:600;color:#93C5FD">Read or Skip</span>
+              <span style="color:#64748B">·</span>
+              <span><span class="dotc" style="background:#6EE7B7"></span>值得读 <b style="color:#6EE7B7">3</b></span>
+              <span><span class="dotc" style="background:#FCD34D"></span>可扫 <b style="color:#FCD34D">4</b></span>
+              <span><span class="dotc" style="background:#CBD5E1"></span>可跳过 <b style="color:#CBD5E1">5</b></span>
+            </div>
+          </div>
+        </div>
+        <div class="note"><ul>
+          <li>反转编码：<b>浅色底 + 深色字</b>。实测 6.78 / 8.15 / 8.40 / 6.69 : 1，全部达标</li>
+          <li>暗色宿主页同样两套色（8.09 / 9.18 / 9.18 / 5.10 : 1）；由容器背景亮度决定切哪一套</li>
+          <li>加<b>非颜色线索</b>：read 前加实心点、skim 加空心底、skip 加横线，灰度打印与色觉障碍下依然可分</li>
+          <li>圆角 6px → 4px，字号 11px → 12px：更像标签，不再像药丸</li>
+        </ul></div>
+      </div>
+    </div>
+
+    <h3 style="margin-top:var(--s7)">3.4　扩展图标</h3>
+    <p style="margin-top:var(--s3);font-size:13.5px">
+      现状是对勾。对勾在界面语言里是「已完成 / 通过」的单义符号，而这个产品的全部价值在于<b>分三档</b>——
+      一个只能说「是」的符号，无法表达「值得读 / 快速扫 / 可以跳过」。而且要澄清：它对勾在浏览器工具栏里，
+      会和「任务清单 / 待办 / 已批准」类扩展直接撞脸。下面是同一符号在 16 / 32 / 128px 的实际观感。
+    </p>
+    <div class="pair" style="margin-top:var(--s4)">
+      <div class="lane before">
+        <header><span class="k">现状</span><span class="d">渐变底 + 对勾</span></header>
+        <div class="stage" style="display:block;padding:var(--s4)">
+          <div class="iconrow">
+            <div style="display:flex;align-items:flex-end;justify-content:center;gap:var(--s4)">
+              <img src="./icons/icon16.png" width="16" height="16" alt="icon16" style="image-rendering:auto">
+              <img src="./icons/icon32.png" width="32" height="32" alt="icon32" style="image-rendering:auto">
+              <img src="./icons/icon128.png" width="72" height="72" alt="icon128" style="image-rendering:auto">
+            </div>
+            <div class="cap">16 · 32 · 72px</div>
+          </div>
+        </div>
+        <div class="note"><ul>
+          <li>对勾 = 「已完成」，与本产品语义无关，且极易与待办类扩展混同</li>
+          <li>蓝紫渐变在 16px 下退化成一块糊掉的紫蓝方点，渐变的走向完全丢失</li>
+          <li>与弹窗/设置页里的<b>书本</b>符号不是同一个东西</li>
+        </ul></div>
+      </div>
+      <div class="lane after">
+        <header><span class="k">重构</span><span class="d">三段刻度 · 单色</span></header>
+        <div class="stage" style="display:block;padding:var(--s4)">
+          <div class="iconrow">
+            <div style="display:flex;align-items:flex-end;justify-content:center;gap:var(--s4)">
+              <span class="ic-app" data-size="16"></span>
+              <span class="ic-app" data-size="32"></span>
+              <span class="ic-app" data-size="72"></span>
+            </div>
+            <div class="cap">16px（两条 · 简化版）· 32 / 72px（三条 · 完整版）</div>
+          </div>
+        </div>
+        <div class="note"><ul>
+          <li>等粗、等距、长度 100% / 66% / 33% 的横条 = <b>三档</b>的字面可视化，直接对应「值得读 / 快速扫 / 可跳过」</li>
+          <li>去掉尖角与圆头改为均匀圆角矩形，是为了避开「信号强度 / 排序」的读法，读起来像标尺刻度</li>
+          <li>单色蓝底 + 白几何，白色几何与蓝底实测 <b>3.68:1</b>，满足图形 3:1 要求</li>
+          <li><b>光学尺寸调整</b>：三条在 16px 上的实际间距只剩约 0.8px，会糊成一团——所以 16px 走两条的简化版，32px 以上才用完整三条。这是同一系统的尺寸特定调整，不是两套图标</li>
+        </ul></div>
+      </div>
+    </div>
+
+    <div style="margin-top:var(--s4)">
+      <div class="iconswatches">
+        <div>
+          <div class="toolbar-light"><span class="ic-app" data-size="16"></span><span class="ic-app" data-size="16"></span><span class="ic-app" data-size="16"></span></div>
+          <div class="toolbar-cap">浅色工具栏 #DEE1E6 · 2.81:1</div>
+        </div>
+        <div>
+          <div class="toolbar-dark"><span class="ic-app" data-size="16"></span><span class="ic-app" data-size="16"></span><span class="ic-app" data-size="16"></span></div>
+          <div class="toolbar-cap">深色工具栏 #35363A · 3.28:1</div>
+        </div>
+        <div>
+          <div class="toolbar-light" style="background:#C8CCD4"><span class="ic-app" data-size="16"></span></div>
+          <div class="toolbar-cap" style="color:var(--warn)">中灰底 #C8CCD4 · 2.28:1 ← 弱项</div>
+        </div>
+      </div>
+      <p style="margin-top:var(--s3);font-size:12.5px;color:var(--text-3);max-width:78ch">
+        需要说清楚：<b>彩色图标在浏览器工具栏上天然有风险</b>。实测四种底色，蓝方块在中灰底（#C8CCD4，部分第三方主题会出现）
+        只有 2.28:1，是这套方案唯一的弱项。Chrome 自带的浅色与深色主题分别落在 #DEE1E6 与 #35363A，
+        对应 2.81:1 与 3.28:1，都足够。若要在任意主题下都稳，应把方形底色压到近黑（<code>#16181D</code>）——但那会在深色工具栏上失守。
+        现方案选择「在官方两套主题上都成立」，并把弱项记录下来，而不是声称它在所有情况下都成立。
+      </p>
+    </div>
+  </section>
+
+  <!-- ================= findings ================= -->
+  <section>
+    <div class="sechead"><span class="n">04</span><h2>逐条发现</h2><p>点击任一条展开证据与修正</p></div>
+    <div style="margin-top:var(--s4)">
+
+      <details class="finding" open>
+        <summary>
+          <span class="tag p0">P0</span>
+          <span><span class="f-title">所有依赖 <code>hidden</code> 属性的显隐全部失效</span>
+          <span class="f-sub">弹窗打开时，结果卡上会永久挂着一行「正在读取当前页面…」，以及一条孤立的 1px 分隔线</span></span>
+          <span class="chev">›</span>
+        </summary>
+        <div class="fbody">
+          <div class="frow"><span class="k">现象</span><span class="v">UA 样式表里的 <code>[hidden]{display:none}</code> 优先级低于作者样式。而 <code>.loading</code> / <code>.verdictwrap</code> / <code>.metrics</code> / <code>.chips</code> / <code>.metaline</code> 五个类都声明了 <code>display</code>，于是把 <code>hidden</code> 整个抵消掉。</span></div>
+          <div class="frow"><span class="k">影响</span><span class="v">加载态永远不会消失（<code>$("loading").hidden = true</code> 无效）；初次打开时会出现一个空圆环 + 孤立的「—」；空的 <code>.metaline</code> 会渲染一条 <code>border-top</code> 横线；三个空 flex 容器额外占掉约 33px 高度。用户第一眼看到的是一个<b>坏掉的界面</b>。</span></div>
+          <div class="frow"><span class="k">证据</span><span class="v">用项目自带的 jsdom 加载真实 <code>popup.html</code> + <code>popup.css</code> 后逐元素取 computed style：</span></div>
+          <div class="ev">id             hidden属性   computed display
+verdictwrap    true        <span class="del">flex   ← 应为 none</span>
+metrics        true        <span class="del">flex   ← 应为 none</span>
+chips          true        <span class="del">flex   ← 应为 none</span>
+metaline       true        <span class="del">flex   ← 应为 none</span>
+unsupported    true        none    ← 该类没有声明 display，所以正常</div>
+          <div class="frow"><span class="k">修正</span><span class="v">加一行兜底即可，同时覆盖未来新增的元素：</span></div>
+          <div class="ev"><span class="cm">/* 三个页面的 reset 区域各加一行 */</span>
+<span class="add">[hidden] { display: none !important; }</span></div>
+          <div class="frow"><span class="k">复测</span><span class="v">重跑 jsdom 脚本，五个 id 的 computed display 应全部为 <code>none</code>（<code>loading</code> 在初始态为 <code>flex</code>）；再在浏览器里打开弹窗，确认加载行在结果渲染后消失、结果卡顶部无孤立分隔线。</span></div>
+        </div>
+      </details>
+
+      <details class="finding">
+        <summary>
+          <span class="tag p0">P0</span>
+          <span><span class="f-title">搜索结果徽章在浅色页面上不可读</span>
+          <span class="f-sub">四档等级色 1.55–4.17:1，全部低于 4.5:1；等级只靠色相区分</span></span>
+          <span class="chev">›</span>
+        </summary>
+        <div class="fbody">
+          <div class="frow"><span class="k">现象</span><span class="v"><code>serp.js</code> 把所有颜色写在行内样式里，直接复用深色 UI 的 <code>VERDICT[*].color</code> 作为 11px 文字色。亮绿、亮琥珀在白色背景上不可能达标。</span></div>
+          <div class="frow"><span class="k">影响</span><span class="v">搜索结果标注是这个扩展的第二大功能，但在真实浅色结果页上等级几乎看不清；若宿主页是暗色模式，<code>#64748B</code> 文字与 <code>#333155</code> 汇总条会跌到 2.55:1 和 <b>1.32:1</b>——完全不可读。等级区分只有色相，灰度/色觉障碍下失去全部信息。</span></div>
+          <div class="frow"><span class="k">证据</span><span class="v">WCAG 2.1 对比度计算（<code>b.contrast_audit.py</code>）：</span></div>
+          <div class="ev">浅色宿主页
+  read    #34D399 on #E3F9F1   <span class="del">1.75:1</span>  需 4.5
+  skim    #FBBF24 on #FEF6E0   <span class="del">1.55:1</span>  需 4.5
+  skip    #94A3B8 on #F0F2F5   <span class="del">2.29:1</span>  需 4.5
+  pending #64748B on #EEF0F4   <span class="del">4.17:1</span>  需 4.5
+深色宿主页
+  pending #64748B on #33363C   <span class="del">2.55:1</span>
+  汇总条  #334155 on #262E39   <span class="del">1.32:1</span></div>
+          <div class="frow"><span class="k">修正</span><span class="v">
+            ① 反转编码为<b>浅底深字</b>（read <code>#065F46</code> on <code>#D1FAE5</code>，skim <code>#78350F</code> on <code>#FEF3C7</code>，skip <code>#334155</code> on <code>#E2E8F0</code>，pending <code>#475569</code> on <code>#EEF1F5</code>）；
+            ② 用容器背景亮度选明暗套——读一次 <code>getComputedStyle(container).backgroundColor</code>，相对亮度 &gt; 0.5 用浅色套，否则深色套；
+            ③ 每档加非颜色线索（实心点 / 空心底 / 短横），并保留文字标签；<br>
+            ④ 字号 11→12px，圆角 6→4px；<br>
+            ⑤ 顺手把行内样式搬进 <code>style</code> 节点，用 CSS 变量主题化。
+          </span></div>
+          <div class="frow"><span class="k">复测</span><span class="v">在 Google（浅色 + 暗色）、Bing、百度各跑一次，用取色器抽查四种徽章的前景/背景对，确认 ≥4.5:1；截图后转灰度，确认四档在灰度下仍可分。</span></div>
+        </div>
+      </details>
+
+      <details class="finding">
+        <summary>
+          <span class="tag p1">P1</span>
+          <span><span class="f-title">快捷键 <code>Alt+Shift+R</code> 被触发两次，净效果等于没反应</span>
+          <span class="f-sub">内容脚本和浏览器命令各处理一次，toggle 两次回到原点</span></span>
+          <span class="chev">›</span>
+        </summary>
+        <div class="fbody">
+          <div class="frow"><span class="k">现象</span><span class="v"><code>hud.js</code> 在 <code>document</code> 上监听 <code>Alt+Shift+R</code> 并调用 <code>toggle()</code>；同时 <code>manifest.json</code> 声明了 <code>commands.toggle-panel</code>，<code>service-worker.js</code> 收到后<b>也</b>发 <code>RS_TOGGLE_PANEL</code> 给同一个内容脚本。两条路径各 toggle 一次。</span></div>
+          <div class="frow"><span class="k">影响</span><span class="v">用户按快捷键后浮层闪一下又回到原状，只能判断为「快捷键坏了」。这是文档里宣传的核心操作之一。</span></div>
+          <div class="frow"><span class="k">证据</span><span class="v"><code>src/content/hud.js</code> 第 723–729 行与 <code>src/background/service-worker.js</code> 第 302–311 行，两处对同一组合键各自独立处理。</span></div>
+          <div class="frow"><span class="k">修正</span><span class="v">删掉 <code>hud.js</code> 里的全局 keydown 分支，只保留 <code>chrome.runtime.onMessage</code> 的 <code>RS_TOGGLE_PANEL</code> 分支——快捷键由浏览器统一路由，页面脚本不应抢。同时把 <code>Escape</code> 也改成有条件的：只有焦点在浮层内部、或指针悬停于浮层时才响应，并 <code>stopPropagation</code>，避免吃掉宿主页自己的 Esc 行为。</span></div>
+          <div class="frow"><span class="k">复测</span><span class="v">按一次 <code>Alt+Shift+R</code>，浮层状态应翻转一次；在带 Esc 快捷键的站点（如 GitHub issue 编辑）按 Esc，宿主页行为正常，浮层不响应。</span></div>
+        </div>
+      </details>
+
+      <details class="finding">
+        <summary>
+          <span class="tag p1">P1</span>
+          <span><span class="f-title">色彩账本混乱：同一套颜色同时是「结论等级」和「数值高低」</span>
+          <span class="f-sub">绿既是「值得读」又是「数值高」，灰既是「可跳过」又是「数值低」</span></span>
+          <span class="chev">›</span>
+        </summary>
+        <div class="fbody">
+          <div class="frow"><span class="k">现象</span><span class="v"><code>VERDICT.read/skim/skip</code> 用绿/琥珀/灰；<code>chip.hi/mid/lo</code> 又用绿/琥珀/灰；指标条的填充色还跟着判定色走；<code>chip.mid</code> 与 <code>chip.warn</code> 的定义完全相同，属于冗余变体。一个卡片上最多同时出现 6 种色相（判定色 ×2 渐变端点、accent、hi、mid、lo）。</span></div>
+          <div class="frow"><span class="k">影响</span><span class="v">同一颜色在不同位置含义不同，用户无法建立「绿=什么」的稳定认知。当「阅读价值 高」和「可信度 低」同时出现时，同一个绿色既是好消息又是坏消息，颜色失去可被信任的语义。</span></div>
+          <div class="frow"><span class="k">证据</span><span class="v">对比 <code>src/lib/constants.js</code> 的 <code>RS.VERDICT</code>（#34D399 / #FBBF24 / #94A3B8）与 <code>hud.js</code> 的 <code>.chip.hi/.mid/.lo</code>（#6EE7B7 / #FCD34D / #A9B4C4）与 <code>popup.js</code> 的 tone 映射——三处是同一套色相做三种语义。</span></div>
+          <div class="frow"><span class="k">修正</span><span class="v">建立角色表并强制执行：<b>判定三色只用于结论</b>（判定词、顶部综合分条、角标圆点）；<b>数值一律用判定色单一色相</b>，不按高低换色；<b>chip 全部中性</b>（文字色 + 细描边），只有警告类才允许琥珀。删掉 <code>chip.mid</code>。</span></div>
+          <div class="frow"><span class="k">复测</span><span class="v">把卡片截图转灰度：判定词仍应是画面中对比最强的一处；随机抽 5 个页面，确认不存在「一个色相两种含义」的组合。</span></div>
+        </div>
+      </details>
+
+      <details class="finding">
+        <summary>
+          <span class="tag p1">P1</span>
+          <span><span class="f-title">视觉层级与任务优先级不匹配：圆环抢走了判定词的位置</span>
+          <span class="f-sub">52×52 的渐变圆环是画面的第一视觉，而产品的价值在「值得认真读」这五个字</span></span>
+          <span class="chev">›</span>
+        </summary>
+        <div class="fbody">
+          <div class="frow"><span class="k">现象</span><span class="v">圆环占 52×52、带渐变描边、内部放 14px 粗体数字；判定词只有 16px。同一个信息被表达了三次（环的填充长度、环的颜色、环内的数字）。卡片上另外还有 6 条边界线索在争夺注意力。</span></div>
+          <div class="frow"><span class="k">影响</span><span class="v">模糊或灰度下，第一眼看到的是一个百分比，而不是「读 / 扫 / 跳」这个可执行的结论。判定词是用户唯一需要的东西，却被降为第二层级。</span></div>
+          <div class="frow"><span class="k">证据</span><span class="v">模糊测试：将现状卡片高斯模糊 6px，判读顺序为「圆环 → 彩色 chip → 判定词」。第一视觉与任务目标不一致。</span></div>
+          <div class="frow"><span class="k">修正</span><span class="v">删除圆环。判定词升到 20px/600 成为唯一第一视觉；综合分降为标题行右端的 13px 等宽数字；把<b>原来那条纯装饰的顶部 2px 渐变光条改造成真实的综合分刻度</b>——同一像素位同时完成去装饰和加信息。边界线索从 6 条收到 3 条（不透明填充 / 1px 边框 / 一个外投影）。</span></div>
+          <div class="frow"><span class="k">复测</span><span class="v">同样做 6px 模糊测试，判读顺序应为「判定词 → 4 根细条 → 数字」；灰度测试下判定词仍是最强对比。</span></div>
+        </div>
+      </details>
+
+      <details class="finding">
+        <summary>
+          <span class="tag p1">P1</span>
+          <span><span class="f-title">中文小字普遍偏小，第三级文字色低于 4.5:1</span>
+          <span class="f-sub">10.5px 与 11px 中文共出现在 9 处；<code>--dim</code> 系列实测 3.75–4.43:1</span></span>
+          <span class="chev">›</span>
+        </summary>
+        <div class="fbody">
+          <div class="frow"><span class="k">现象</span><span class="v">chip 10.5px、metaline 10.5px、footmeta 10.5px、rlabel small 10.5px、<code>%</code> 单位 9px、stats 11px、标签 11 / 11.5px。第三级文字色 <code>#767e8d / #7a8291 / #7C8494</code> 在各自背景上全部不足 4.5:1。同一指标的标签列宽在 popup 是 58px、在 HUD 是 62px。</span></div>
+          <div class="frow"><span class="k">影响</span><span class="v">中文笔画密度远高于拉丁字母，10.5px 在 Windows 默认渲染下会糊成一团（尤其「新信息程度」「阅读价值」）。低对比的第三级颜色又叠加在过小的字号上，等于双重削弱。</span></div>
+          <div class="frow"><span class="k">证据</span><span class="v">实测对比度（<code>contrast_audit.py</code>）：</span></div>
+          <div class="ev">popup   row 副标题 10.5px  #767e8d on #1b1e25   <span class="del">4.08:1</span>
+popup   metaline   10.5px  #767e8d on #21252e   <span class="del">3.75:1</span>
+popup   stats 行   11px    #767e8d on #14161b   <span class="del">4.43:1</span>
+HUD     底栏元信息 10.5px  #7c8494 on #1c1f25   <span class="del">4.39:1</span>
+options stat 标题  11px    #7a8291 on #1c2029   <span class="del">4.22:1</span></div>
+          <div class="frow"><span class="k">修正</span><span class="v">支持性文字下限统一提到 <b>12px</b>；删除 <code>--dim</code> 这一级，只保留 primary / secondary 两级文字色（新令牌 <code>#EDEFF4</code> / <code>#9CA4B3</code>，后者在全部三种表面上实测 6.36–7.70:1）。标签列宽统一到 72px，并在 HUD 与 popup 之间共享同一套组件参数。文案同步瘦身：「新信息程度」→「新信息」，「时效性」保持。</span></div>
+          <div class="frow"><span class="k">复测</span><span class="v">在 100% 与 200% 缩放下各看一遍；把所有支持性文字复算对比度，确认 ≥4.5:1；在 Windows Chrome 上确认 12px 中文不再发糊。</span></div>
+        </div>
+      </details>
+
+      <details class="finding">
+        <summary>
+          <span class="tag p1">P1</span>
+          <span><span class="f-title">可访问性缺失：无焦点样式、无 reduced-motion、命中区不足</span>
+          <span class="f-sub">纯键盘用户看不到焦点位置；三个页面都没有动效降级</span></span>
+          <span class="chev">›</span>
+        </summary>
+        <div class="fbody">
+          <div class="frow"><span class="k">现象</span><span class="v">三个样式表里 <code>:focus-visible</code> 出现 0 次；<code>prefers-reduced-motion</code> 出现 0 次；<code>.iconbtn</code> 26×26、<code>.tbtn</code> 约 24px 高、<code>.sw</code> 36×20——全部低于 44px。</span></div>
+          <div class="frow"><span class="k">影响</span><span class="v">键盘用户 Tab 到「重新评估」时没有任何视觉反馈，等于盲操作；Windows 触屏与手抖用户在 24px 高的按钮上难以命中。系统开启「减少动态效果」后，spinner 旋转、shimmer 骨架、pulse 脉冲、卡片入场、进度条过场共 5 类动画照常播放。</span></div>
+          <div class="frow"><span class="k">证据</span><span class="v"><code>grep -c focus-visible popup.css options.css</code> → 0 / 0；HUD 内联 CSS 亦为 0。</span></div>
+          <div class="frow"><span class="k">修正</span><span class="v">全局加焦点环并用 <code>--focus</code>（<code>#7FB0FF</code>，在 surface 上 8.09:1）；把命中区与视觉尺寸解耦——视觉仍保持紧凑，用伪元素把可点区域扩到 44×44：</span></div>
+          <div class="ev"><span class="add">:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }</span>
+
+<span class="cm">/* 视觉 28px，命中 44px —— 不牺牲密度 */</span>
+<span class="add">.iconbtn { position: relative; width: 28px; height: 28px; }
+.iconbtn::after { content: ""; position: absolute; inset: -8px; }</span>
+
+<span class="add">@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}</span>
+
+<span class="cm">/* 触摸设备上再放大 */</span>
+<span class="add">@media (pointer: coarse) { .n-btn { height: 44px; } .sw { width: 48px; height: 26px; } }</span></div>
+          <div class="frow"><span class="k">复测</span><span class="v">纯 Tab 走完弹窗与设置页，每个可交互元素都应出现焦点环且不被裁切；系统开启减少动态效果后，确认 5 类动画全部静止但状态仍可辨（spinner 改为静态「评估中」文字）；用取色器量命中区。</span></div>
+        </div>
+      </details>
+
+      <details class="finding">
+        <summary>
+          <span class="tag p1">P1</span>
+          <span><span class="f-title">9 秒自动收起会打断键盘用户，并可能在卡片被裁切时误定位</span>
+          <span class="f-sub">收起条件只检查 <code>:hover</code>；位置夹紧用的是硬编码高度 300px</span></span>
+          <span class="chev">›</span>
+        </summary>
+        <div class="fbody">
+          <div class="frow"><span class="k">现象</span><span class="v"><code>expand()</code> 的自动收起回调只判断 <code>S.card.matches(":hover")</code>。键盘用户把焦点移进卡片后，9 秒到点卡片照样收起，焦点被丢到 <code>body</code>。同时 <code>applyPosition()</code> 用 <code>h = 300</code> 这个估计值做边界夹紧，而卡片实际高度随警告条与 chip 数量变化（实测约 250–340px）。</span></div>
+          <div class="frow"><span class="k">影响</span><span class="v">键盘用户正在读卡时内容消失；在低矮窗口里卡片底部按钮可能被夹到视口之外，而它是唯一能点「重新评估」的地方。</span></div>
+          <div class="frow"><span class="k">修正</span><span class="v">收起条件加上 <code>!S.card.contains(document.activeElement)</code>；位置夹紧改用 <code>S.wrap.getBoundingClientRect()</code> 实测高度，并在 <code>render()</code> 之后用 <code>requestAnimationFrame</code> 再定位一次（内容变化会改变高度）。另建议把默认 9000ms 提到 12000ms，或在鼠标首次移入卡片后停用自动收起。</span></div>
+          <div class="frow"><span class="k">复测</span><span class="v">Tab 进卡片后静置 15 秒，卡片不应收起、焦点不应丢失；把浏览器窗口压到 500px 高，卡片底部的「重新评估」应完整可见可点。</span></div>
+        </div>
+      </details>
+
+      <details class="finding">
+        <summary>
+          <span class="tag p2">P2</span>
+          <span><span class="f-title">系统参数零散：10 种圆角、任意的间距与字号、同一控件两套尺寸</span>
+          <span class="f-sub">圆角用到 5/6/7/8/9/10/11/12/14/18px；开关在 popup 是 36×20、在设置页是 40×22</span></span>
+          <span class="chev">›</span>
+        </summary>
+        <div class="fbody">
+          <div class="frow"><span class="k">现象</span><span class="v">卡片圆角 18px、chips 7px、按钮 9px、图标按钮 8px、logo 8px、面板 14px、输入框 9px。间距出现 9/10/11/12/13/14/18/22px。字号出现 9/10.5/11/11.5/12/12.5/13/13.5/14/15/16/19px。同一个开关控件在两处两套尺寸。</span></div>
+          <div class="frow"><span class="k">影响</span><span class="v">不是某一处难看，而是无法复现——每次加新组件都要重新猜一个值，系统会持续漂移。</span></div>
+          <div class="frow"><span class="k">修正</span><span class="v">收敛到 <b>圆角 2 档</b>（<code>--r-ctl: 8px</code> / <code>--r-box: 12px</code>，胶囊形态除外）；<b>间距 4 的倍数</b>（4/8/12/16/24/32/48/64）；<b>字号 6 档</b>（20 判定词 / 14 正文 / 13 控件 / 12.5 次要 / 12 支持 / 11.5 徽标）；开关统一为一套尺寸并写进共享样式。</span></div>
+          <div class="frow"><span class="k">复测</span><span class="v">在三个页面里检索 <code>border-radius</code> 与 <code>font-size</code>，出现的值应只落在定义的档位里。</span></div>
+        </div>
+      </details>
+
+      <details class="finding">
+        <summary>
+          <span class="tag p2">P2</span>
+          <span><span class="f-title">设置入口重复 4 处，术语与文案未统一</span>
+          <span class="f-sub">齿轮 / 底部「打开设置」/ HUD「设置」/ 错误提示里的链接；「估算中」与「评估中」并存</span></span>
+          <span class="chev">›</span>
+        </summary>
+        <div class="fbody">
+          <div class="frow"><span class="k">现象</span><span class="v">同一动作有 4 个入口；本地估算阶段角标写「估算中」而卡片写「评估中…」；不支持状态用 emoji <code>🚫</code> 作为图形；提示文案「此页面可能仍在加载，或扩展刚安装还未生效。刷新页面后重试。」长达 28 字且末句未给出可点动作。</span></div>
+          <div class="frow"><span class="k">修正</span><span class="v">设置入口收敛到 2 处（顶栏齿轮 + 设置页自身），删掉底部「打开设置」与 HUD 底栏的「设置」按钮；统一术语为<b>「初判」</b>（本地阶段）与<b>「评估中」</b>（模型阶段）；emoji 换成几何 SVG 图标；不支持状态的文案改为两句结构：「<b>页面还没就绪</b> · 刷新后重试」。HUD 底栏只留一个主按钮——「重新评估」。</span></div>
+          <div class="frow"><span class="k">复测</span><span class="v">全局搜索「估算中」「🚫」应无命中；不支持状态截图与三种窗口宽度核对不折行。</span></div>
+        </div>
+      </details>
+
+    </div>
+  </section>
+
+  <!-- ================= 令牌 ================= -->
+  <section>
+    <div class="sechead"><span class="n">05</span><h2>设计令牌</h2><p>每一对都是算过的，不是调出来的</p></div>
+    <p style="margin-top:var(--s4);font-size:13.5px">
+      下面这套深色令牌满足全部 20 项对比度检查。三条设计规则：<b>①</b> 表面层级用 4px 步进的冷调中性色，边界由 1px 边框承载；
+      <b>②</b> 文字只保留两级（primary / secondary），删掉原来的第三级低对比色；<b>③</b> 控件边界提到 3.08:1，满足 WCAG 1.4.11。
+    </p>
+
+    <div class="swatches">
+      <div class="sw"><span class="chip" style="background:#0C0E13"></span><span><span class="nm">canvas</span><br><span class="hx">#0C0E13</span></span></div>
+      <div class="sw"><span class="chip" style="background:#15181E"></span><span><span class="nm">surface</span><br><span class="hx">#15181E</span></span></div>
+      <div class="sw"><span class="chip" style="background:#1E222A"></span><span><span class="nm">surface-2</span><br><span class="hx">#1E222A</span></span></div>
+      <div class="sw"><span class="chip" style="background:#0A0C10"></span><span><span class="nm">field</span><br><span class="hx">#0A0C10</span></span></div>
+      <div class="sw"><span class="chip" style="background:#262B34"></span><span><span class="nm">border</span><br><span class="hx">#262B34</span></span></div>
+      <div class="sw"><span class="chip" style="background:#5E6675"></span><span><span class="nm">border-ctl</span><br><span class="hx">#5E6675</span></span></div>
+      <div class="sw"><span class="chip" style="background:#EDEFF4"></span><span><span class="nm">text</span><br><span class="hx">#EDEFF4</span></span></div>
+      <div class="sw"><span class="chip" style="background:#9CA4B3"></span><span><span class="nm">text-2</span><br><span class="hx">#9CA4B3</span></span></div>
+      <div class="sw"><span class="chip" style="background:#3B82F6"></span><span><span class="nm">accent</span><br><span class="hx">#3B82F6</span></span></div>
+      <div class="sw"><span class="chip" style="background:#7FB0FF"></span><span><span class="nm">focus</span><br><span class="hx">#7FB0FF</span></span></div>
+      <div class="sw"><span class="chip" style="background:#4ADE9E"></span><span><span class="nm">verdict-read</span><br><span class="hx">#4ADE9E</span></span></div>
+      <div class="sw"><span class="chip" style="background:#F2C14E"></span><span><span class="nm">verdict-skim</span><br><span class="hx">#F2C14E</span></span></div>
+      <div class="sw"><span class="chip" style="background:#A7B0BE"></span><span><span class="nm">verdict-skip</span><br><span class="hx">#A7B0BE</span></span></div>
+      <div class="sw"><span class="chip" style="background:#FBBF24"></span><span><span class="nm">warn</span><br><span class="hx">#FBBF24</span></span></div>
+      <div class="sw"><span class="chip" style="background:#FD8A9B"></span><span><span class="nm">danger</span><br><span class="hx">#FD8A9B</span></span></div>
+    </div>
+
+    <div class="copybar"><button class="copybtn" data-copy="tokens">复制 CSS 变量</button><span class="mono" style="color:var(--text-3)">--rs-* 共 15 个令牌</span></div>
+    <div class="ev" id="tokens" style="margin-top:var(--s3)">:root {
+  --rs-canvas:        #0C0E13;
+  --rs-surface:       #15181E;
+  --rs-surface-2:     #1E222A;
+  --rs-field:         #0A0C10;
+  --rs-border:        #262B34;
+  --rs-border-ctl:    #5E6675;
+  --rs-text:          #EDEFF4;
+  --rs-text-2:        #9CA4B3;
+  --rs-accent:        #3B82F6;
+  --rs-focus:         #7FB0FF;
+  --rs-read:          #4ADE9E;
+  --rs-skim:          #F2C14E;
+  --rs-skip:          #A7B0BE;
+  --rs-warn:          #FBBF24;
+  --rs-danger:        #FD8A9B;
+}</div>
+
+    <table>
+      <thead><tr><th>校验项</th><th>实测</th><th>要求</th><th>依据</th></tr></thead>
+      <tbody>
+        <tr><td>正文 13px @surface</td><td class="n pass">15.45:1</td><td class="n">≥ 4.5</td><td>WCAG 1.4.3</td></tr>
+        <tr><td>次要文字 12px @surface</td><td class="n pass">7.09:1</td><td class="n">≥ 4.5</td><td>WCAG 1.4.3</td></tr>
+        <tr><td>次要文字 12px @surface-2</td><td class="n pass">6.36:1</td><td class="n">≥ 4.5</td><td>WCAG 1.4.3</td></tr>
+        <tr><td>次要文字 12px @canvas</td><td class="n pass">7.70:1</td><td class="n">≥ 4.5</td><td>WCAG 1.4.3</td></tr>
+        <tr><td>输入框占位符 @field</td><td class="n pass">6.57:1</td><td class="n">≥ 4.5</td><td>WCAG 1.4.3</td></tr>
+        <tr><td>判定词 read 17px @surface</td><td class="n pass">10.36:1</td><td class="n">≥ 3.0</td><td>WCAG 1.4.3 大字</td></tr>
+        <tr><td>判定词 skim 17px @surface</td><td class="n pass">10.59:1</td><td class="n">≥ 3.0</td><td>WCAG 1.4.3 大字</td></tr>
+        <tr><td>判定词 skip 17px @surface</td><td class="n pass">8.12:1</td><td class="n">≥ 3.0</td><td>WCAG 1.4.3 大字</td></tr>
+        <tr><td>警告 12px @surface-2</td><td class="n pass">9.55:1</td><td class="n">≥ 4.5</td><td>WCAG 1.4.3</td></tr>
+        <tr><td>危险 12px @surface-2</td><td class="n pass">7.05:1</td><td class="n">≥ 4.5</td><td>WCAG 1.4.3</td></tr>
+        <tr><td>焦点环 @surface</td><td class="n pass">8.09:1</td><td class="n">≥ 3.0</td><td>WCAG 1.4.11</td></tr>
+        <tr><td>控件边框 @surface</td><td class="n pass">3.08:1</td><td class="n">≥ 3.0</td><td>WCAG 1.4.11</td></tr>
+        <tr><td>控件边框 @field</td><td class="n pass">3.39:1</td><td class="n">≥ 3.0</td><td>WCAG 1.4.11</td></tr>
+        <tr><td>开关已选轨道 @surface</td><td class="n pass">4.83:1</td><td class="n">≥ 3.0</td><td>WCAG 1.4.11</td></tr>
+        <tr><td>徽章 read @浅色页</td><td class="n pass">6.78:1</td><td class="n">≥ 4.5</td><td>WCAG 1.4.3</td></tr>
+        <tr><td>徽章 skim @浅色页</td><td class="n pass">8.15:1</td><td class="n">≥ 4.5</td><td>WCAG 1.4.3</td></tr>
+        <tr><td>徽章 skip @浅色页</td><td class="n pass">8.40:1</td><td class="n">≥ 4.5</td><td>WCAG 1.4.3</td></tr>
+        <tr><td>徽章 read / skim / skip @深色页</td><td class="n pass">8.09 / 9.18 / 9.18</td><td class="n">≥ 4.5</td><td>WCAG 1.4.3</td></tr>
+        <tr><td>汇总条 @深色页</td><td class="n pass">9.97:1</td><td class="n">≥ 4.5</td><td>WCAG 1.4.3</td></tr>
+        <tr><td>品牌方块 vs 深色工具栏</td><td class="n pass">3.28:1</td><td class="n">≥ 1.5</td><td>图标可辨识度</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ================= 落地顺序 ================= -->
+  <section>
+    <div class="sechead"><span class="n">06</span><h2>修订顺序</h2><p>按「先解阻塞、再解系统性成因」排序</p></div>
+    <ol class="steps">
+      <li><b>加一行 <code>[hidden]{display:none!important}</code></b>（三个样式表）。一行代码解掉一个 P0，先把弹窗恢复成可用状态。</li>
+      <li><b>重写 SERP 徽章配色与明暗分流</b>，并把行内样式搬进样式节点。这是第二个 P0，也是用户能直接看到的对比度问题。</li>
+      <li><b>删掉 <code>hud.js</code> 的全局 keydown 分支</b>，只由 <code>chrome.commands</code> 路由；Escape 改为条件响应。</li>
+      <li><b>落地设计令牌</b>（15 个变量）到三个页面，把 <code>--dim</code> 一级删掉、圆角与间距收敛到档位。这一步做完，后面所有组件改动都有依据。</li>
+      <li><b>重做 HUD 卡片</b>：删圆环、顶部条改综合分、指标条改 2px 直角、chip 中性化、字号回到 12px 起。</li>
+      <li><b>补可访问性</b>：焦点环、<code>prefers-reduced-motion</code>、44px 命中区、自动收起时保留焦点。</li>
+      <li><b>换图标</b>：改 <code>tools/make_icons.py</code> 为单色底 + 三段刻度，重新生成四个尺寸，弹窗与设置页同步换用同一符号。</li>
+      <li><b>设置页补浅色主题</b>：它是整页 tab，跟随 <code>prefers-color-scheme</code>，否则浅色系统用户会突然遇到一整页黑。</li>
+    </ol>
+
+    <p style="margin-top:var(--s5);font-size:13.5px;color:var(--text-3)">
+      第 1–4 步做完，硬门槛即解除，分数会从 45 升到 70 上下；第 5–8 步是把「可用」变成「好」。
+    </p>
+  </section>
+
+  <!-- ================= 局限 ================= -->
+  <section>
+    <div class="sechead"><span class="n">07</span><h2>本次未验证的部分</h2><p>这些不构成结论，只是缺口</p></div>
+    <table>
+      <thead><tr><th>未执行</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>真实浏览器渲染</td><td>无浏览器环境。所有对比度按 WCAG 公式计算（<code>contrast_audit.py</code>），几何与层级判断基于源码推演；未在 Chrome 中实际截图核对。</td></tr>
+        <tr><td>交互路径实跑</td><td><code>hidden</code> 失效与快捷键双触发已由静态代码 + jsdom 证实，但「点开弹窗看到孤立分隔线」这一现象未在浏览器中肉眼确认。</td></tr>
+        <tr><td>响应式与缩放</td><td>未测 375 / 768 / 1024 / 1440px、200% 缩放、文本间距覆盖。</td></tr>
+        <tr><td>宿主页兼容性</td><td>未在六个搜索引擎的真实 DOM 上验证新徽章的插入位置与明暗判定阈值（<code>getComputedStyle</code> 亮度分流需要实测校准）。</td></tr>
+        <tr><td>图标版权与生产</td><td>提议的新图标为原创几何，无第三方资产；但未做小尺寸印刷/单色测试，也未改动仓库内的 PNG。</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <footer>
+    <span>Read or Skip v1.0.0 · Manifest V3</span>
+    <span>审查范围：popup / options / content-hud / content-serp / icons</span>
+    <span>取证脚本：contrast_audit.py · proposed_contrast.py · final2.py · hidden_bug.mjs（jsdom）</span>
+    <span>未修改任何项目文件</span>
+  </footer>
+</div>
+
+<script>
+/* ---- 生成"重构后"的图标：单色蓝底 + 递减直角横条 ----
+   光学尺寸调整：16px 用两条（三条在 1x 屏上间距只剩 0.8px 会糊成一块），
+   32px 以上才用完整的三条。这是尺寸特定调整，不是两套图标。 */
+const GLYPH_3 =
+  '<svg viewBox="0 0 24 24" width="100%" height="100%" aria-hidden="true">' +
+    '<rect x="4" y="3.6"  width="16"   height="3.6" rx="1.8" fill="#FFFFFF"/>' +
+    '<rect x="4" y="10.2" width="10.5" height="3.6" rx="1.8" fill="#FFFFFF"/>' +
+    '<rect x="4" y="16.8" width="5"    height="3.6" rx="1.8" fill="#FFFFFF"/>' +
+  '</svg>';
+
+const GLYPH_2 =
+  '<svg viewBox="0 0 24 24" width="100%" height="100%" aria-hidden="true">' +
+    '<rect x="3.5" y="5.25"  width="17" height="4.5" rx="2.25" fill="#FFFFFF"/>' +
+    '<rect x="3.5" y="14.25" width="10" height="4.5" rx="2.25" fill="#FFFFFF"/>' +
+  '</svg>';
+
+function appIcon(size) {
+  const radius = Math.round(size * 0.22);
+  const pad = Math.round(size * 0.16);
+  const inner = size - pad * 2;
+  const glyph = size <= 20 ? GLYPH_2 : GLYPH_3;
+  return '<span style="display:inline-grid;place-items:center;width:' + size + 'px;height:' + size + 'px;' +
+    'border-radius:' + radius + 'px;background:#3B82F6;flex:none">' +
+    '<span style="display:block;width:' + inner + 'px;height:' + inner + 'px">' + glyph + '</span></span>';
+}
+
+document.querySelectorAll('.ic-app').forEach((el) => {
+  el.innerHTML = appIcon(Number(el.dataset.size));
+});
+
+const slot = document.getElementById('logoSlot');
+if (slot) slot.innerHTML = appIcon(20);
+
+/* ---- 代码块复制 ---- */
+document.querySelectorAll('.copybtn').forEach((btn) => {
+  btn.addEventListener('click', async () => {
+    const src = document.getElementById(btn.dataset.copy);
+    if (!src) return;
+    const text = src.textContent;
+    const done = () => {
+      const old = btn.textContent;
+      btn.textContent = '已复制';
+      setTimeout(() => (btn.textContent = old), 1400);
+    };
+    try {
+      await navigator.clipboard.writeText(text);
+      done();
+    } catch (e) {
+      const r = document.createRange();
+      r.selectNodeContents(src);
+      const sel = getSelection();
+      sel.removeAllRanges();
+      sel.addRange(r);
+      btn.textContent = '已选中，按 Ctrl+C';
+      setTimeout(() => (btn.textContent = '复制 CSS 变量'), 2200);
+    }
+  });
+});
+</script>
+</body>
+</html>

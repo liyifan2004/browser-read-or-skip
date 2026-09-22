@@ -8,15 +8,40 @@
 
   /* ---------- 判定枚举 ---------- */
   // rank 越大越"值得读"，用于排序 / 比较 / 徽章配色
+  // 判定三色只用于结论（判定词 / 综合分刻度 / 角标圆点），数值条一律用 accent 色相
   RS.VERDICT = {
-    read: { key: "read", label: "值得认真读", short: "值得读", color: "#34D399", glow: "rgba(52,211,153,.45)", rank: 2, icon: "book" },
-    skim: { key: "skim", label: "快速扫", short: "快速扫", color: "#FBBF24", glow: "rgba(251,191,36,.42)", rank: 1, icon: "scan" },
-    skip: { key: "skip", label: "可以跳过", short: "可跳过", color: "#94A3B8", glow: "rgba(148,163,184,.35)", rank: 0, icon: "skip" },
+    read: { key: "read", label: "值得认真读", short: "值得读", color: "#4ADE9E", glow: "rgba(74,222,158,.45)", rank: 2, icon: "book" },
+    skim: { key: "skim", label: "快速扫", short: "快速扫", color: "#F2C14E", glow: "rgba(242,193,78,.42)", rank: 1, icon: "scan" },
+    skip: { key: "skip", label: "可以跳过", short: "可跳过", color: "#A7B0BE", glow: "rgba(167,176,190,.35)", rank: 0, icon: "skip" },
     pending: { key: "pending", label: "评估中…", short: "…", color: "#60A5FA", glow: "rgba(96,165,250,.40)", rank: -1, icon: "spinner" },
     unknown: { key: "unknown", label: "未评估", short: "—", color: "#64748B", glow: "rgba(100,116,139,.30)", rank: -1, icon: "none" },
-    error: { key: "error", label: "评估失败", short: "失败", color: "#FB7185", glow: "rgba(251,113,133,.38)", rank: -1, icon: "alert" }
+    error: { key: "error", label: "评估失败", short: "失败", color: "#FD8A9B", glow: "rgba(253,138,155,.38)", rank: -1, icon: "alert" }
   };
   RS.VERDICT_ORDER = ["read", "skim", "skip"];
+
+  /**
+   * 搜索结果徽章配色：浅色 / 深色宿主页各一套，「浅底深字」编码。
+   * 每一对前景 / 背景都用 WCAG 相对亮度公式验证 ≥ 4.5:1（tests/11-ui-regression 会复算）。
+   * marker 字段是每档的非颜色线索：实心点 / 空心底 / 短横。
+   */
+  RS.SERP_THEME = {
+    light: {
+      read:    { fg: "#065F46", bg: "#D1FAE5", marker: "dot-solid" },
+      skim:    { fg: "#78350F", bg: "#FEF3C7", marker: "dot-hollow" },
+      skip:    { fg: "#334155", bg: "#E2E8F0", marker: "dash" },
+      pending: { fg: "#475569", bg: "#EEF1F5", marker: "none" }
+    },
+    dark: {
+      read:    { fg: "#6EE7B7", bg: "#12362A", marker: "dot-solid" },
+      skim:    { fg: "#FCD34D", bg: "#3B2E0B", marker: "dot-hollow" },
+      skip:    { fg: "#D6DEF0", bg: "#232B38", marker: "dash" },
+      pending: { fg: "#A9C8FC", bg: "#1B2A44", marker: "none" }
+    },
+    summary: {
+      light: { fg: "#27425F", bg: "#E9F0FA", brand: "#1D4ED8" },
+      dark:  { fg: "#D6DEF0", bg: "#1C2431", brand: "#93C5FD" }
+    }
+  };
 
   RS.VALUE_LABEL = { high: "高", medium: "中", low: "低" };
 
@@ -35,7 +60,7 @@
   RS.SOURCE_LABEL = {
     jev: "模型评估",
     cache: "缓存结果",
-    heuristic: "本地估算",
+    heuristic: "初判",
     partial: "搜索结果预判"
   };
 

@@ -82,14 +82,14 @@ describe("hud / 挂载条件", () => {
       onRuntimeSendMessage: () => pending
     });
     await waitFor(() => shadow(env), { label: "浮层挂载" });
-    await waitFor(() => shadow(env).querySelector(".plabel").textContent === "估算中", {
-      label: "进入本地估算态"
+    await waitFor(() => shadow(env).querySelector(".plabel").textContent === "初判", {
+      label: "进入初判态"
     });
 
     const root = shadow(env);
     a.ok(root.querySelector(".pill"), "应有角标");
     a.ok(root.querySelector(".card"), "应有卡片");
-    a.includes(root.querySelector(".card").innerHTML, "本地估算", "本地估算必须自报来源，不能冒充模型结论");
+    a.includes(root.querySelector(".card").innerHTML, "初判", "初判必须自报来源，不能冒充模型结论");
     a.notIncludes(root.querySelector(".card").innerHTML, "jev", "模型还没回来就不该出现模型名");
 
     release({ ok: true, result: modelResult() });
@@ -98,11 +98,11 @@ describe("hud / 挂载条件", () => {
     });
 
     const root2 = shadow(env);
-    a.notIncludes(root2.querySelector(".card").innerHTML, "本地估算", "升级后不该再显示本地估算");
+    a.notIncludes(root2.querySelector(".card").innerHTML, "初判", "升级后不该再显示初判标记");
     a.equal(root2.querySelector(".pscore").textContent, "88%", "综合分 = 94×.45 + 78×.3 + 88×.25");
     a.includes(root2.querySelector(".card").innerHTML, "相关度");
     a.includes(root2.querySelector(".card").innerHTML, "94%");
-    a.includes(root2.querySelector(".card").innerHTML, "新信息程度");
+    a.includes(root2.querySelector(".card").innerHTML, "新信息");
     a.includes(root2.querySelector(".card").innerHTML, "78%");
     a.includes(root2.querySelector(".card").innerHTML, "可信度");
     a.includes(root2.querySelector(".card").innerHTML, "阅读价值");
@@ -276,13 +276,41 @@ describe("hud / 交互", () => {
     a.equal(root.querySelector(".card").style.display, "none", "再点应收起");
   });
 
-  it("Alt+Shift+R 能开关浮层", async () => {
+  it("RS_TOGGLE_PANEL 消息能开关浮层（快捷键由 chrome.commands 统一路由）", async () => {
     const env = bootHud("https://example.com/post/x", articleHtml());
-    await waitFor(() => shadow(env), { label: "浮层挂载" });
-    const before = shadow(env).querySelector(".card").style.display;
+    await waitFor(() => shadow(env) && shadow(env).querySelector(".card").style.display === "block", {
+      label: "卡片展开"
+    });
+
+    const res = await dispatch(env.chrome.__listeners.message, { type: "RS_TOGGLE_PANEL" }, {});
+    a.equal(res.ok, true);
+    a.equal(shadow(env).querySelector(".card").style.display, "none", "第一次切换应收起");
+
+    await dispatch(env.chrome.__listeners.message, { type: "RS_TOGGLE_PANEL" }, {});
+    a.equal(shadow(env).querySelector(".card").style.display, "block", "第二次切换应展开");
+  });
+
+  it("页面级 Alt+Shift+R 不再双触发；Escape 只在指针悬停浮层时响应", async () => {
+    const env = bootHud("https://example.com/post/x", articleHtml());
+    await waitFor(() => shadow(env) && shadow(env).querySelector(".card").style.display === "block", {
+      label: "卡片展开"
+    });
+
+    // 快捷键只走 chrome.commands → RS_TOGGLE_PANEL，页面 keydown 不应再切一次
     env.doc.dispatchEvent(new env.win.KeyboardEvent("keydown", { key: "R", altKey: true, shiftKey: true, bubbles: true }));
     await sleep(30);
-    a.notEqual(shadow(env).querySelector(".card").style.display, before, "快捷键应切换展开状态");
+    a.equal(shadow(env).querySelector(".card").style.display, "block", "页面级快捷键不该再改变浮层状态");
+
+    // 指针不在浮层上：Escape 不响应，宿主页自己的 Esc 行为不受影响
+    env.doc.dispatchEvent(new env.win.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await sleep(30);
+    a.equal(shadow(env).querySelector(".card").style.display, "block", "无关的 Escape 不应收起卡片");
+
+    // 指针悬停在浮层上：Escape 收起
+    shadow(env).querySelector(".wrap").dispatchEvent(new env.win.MouseEvent("mouseenter"));
+    env.doc.dispatchEvent(new env.win.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await sleep(30);
+    a.equal(shadow(env).querySelector(".card").style.display, "none", "悬停时 Escape 应收起卡片");
   });
 
   it("收到强制刷新消息会重新走一次评估", async () => {

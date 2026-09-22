@@ -4,6 +4,11 @@
  * 在每条自然结果的标题前插入一枚等级徽章（值得读 / 可扫 / 跳过）+ 可信度分数，
  * 并在结果列表顶部插入一行汇总条。
  * 副产品：评估结果会写入按 URL 索引的缓存，点进结果页时浮层可以瞬时给出结论。
+ *
+ * 样式策略：所有徽章 / 汇总条样式集中在一次注入的 <style id="rs-serp-style"> 里，
+ * 用 data-v（等级）与 lt / dk（明暗主题）两个属性驱动，宿主页样式不影响它们。
+ * 明暗主题按结果容器背景的相对亮度选择（> 0.5 视为浅色页）。
+ * 每档等级除颜色外还有非颜色线索：实心点（read）/ 空心底（skim）/ 短横（skip）。
  */
 (function (RS) {
   if (window !== window.top) return;
@@ -11,6 +16,7 @@
   window.__RS_SERP_LOADED__ = true;
 
   const CHIP_CLASS = "rs-serp-chip";
+  const STYLE_ID = "rs-serp-style";
 
   const ENGINES = [
     {
@@ -69,9 +75,47 @@
     }
   ];
 
+  /* 所有颜色对都来自 constants.js 的 RS.SERP_THEME（测试会用 WCAG 公式复算 ≥ 4.5:1）。 */
+  const SERP_CSS = `
+.${CHIP_CLASS} {
+  display: inline-flex; align-items: center; gap: 5px;
+  font: 600 12px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
+  padding: 1px 7px; margin-right: 7px; border-radius: 4px;
+  vertical-align: middle; white-space: nowrap; letter-spacing: .2px;
+  position: relative; top: -1px; cursor: help; border: 1px solid transparent;
+}
+.${CHIP_CLASS}::before { content: ""; display: inline-block; flex: none; }
+.${CHIP_CLASS}[data-marker="dot-solid"]::before { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.${CHIP_CLASS}[data-marker="dot-hollow"]::before { width: 6px; height: 6px; border-radius: 50%; border: 1.5px solid currentColor; box-sizing: border-box; }
+.${CHIP_CLASS}[data-marker="dash"]::before { width: 8px; height: 2px; border-radius: 999px; background: currentColor; }
+.${CHIP_CLASS}.lt { border-color: rgba(15,23,42,.14); }
+.${CHIP_CLASS}.dk { border-color: rgba(255,255,255,.16); }
+.${CHIP_CLASS}.lt[data-v="read"]    { color: ${RS.SERP_THEME.light.read.fg};    background: ${RS.SERP_THEME.light.read.bg}; }
+.${CHIP_CLASS}.lt[data-v="skim"]    { color: ${RS.SERP_THEME.light.skim.fg};    background: ${RS.SERP_THEME.light.skim.bg}; }
+.${CHIP_CLASS}.lt[data-v="skip"]    { color: ${RS.SERP_THEME.light.skip.fg};    background: ${RS.SERP_THEME.light.skip.bg}; }
+.${CHIP_CLASS}.lt[data-v="pending"] { color: ${RS.SERP_THEME.light.pending.fg}; background: ${RS.SERP_THEME.light.pending.bg}; }
+.${CHIP_CLASS}.dk[data-v="read"]    { color: ${RS.SERP_THEME.dark.read.fg};    background: ${RS.SERP_THEME.dark.read.bg}; }
+.${CHIP_CLASS}.dk[data-v="skim"]    { color: ${RS.SERP_THEME.dark.skim.fg};    background: ${RS.SERP_THEME.dark.skim.bg}; }
+.${CHIP_CLASS}.dk[data-v="skip"]    { color: ${RS.SERP_THEME.dark.skip.fg};    background: ${RS.SERP_THEME.dark.skip.bg}; }
+.${CHIP_CLASS}.dk[data-v="pending"] { color: ${RS.SERP_THEME.dark.pending.fg}; background: ${RS.SERP_THEME.dark.pending.bg}; }
+#rs-serp-summary {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin: 8px 0 12px; padding: 8px 12px; border-radius: 8px;
+  font: 500 12px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
+  border: 1px solid transparent;
+}
+#rs-serp-summary.lt { background: ${RS.SERP_THEME.summary.light.bg}; border-color: #C9D8EF; color: ${RS.SERP_THEME.summary.light.fg}; }
+#rs-serp-summary.lt .rs-brand { color: ${RS.SERP_THEME.summary.light.brand}; }
+#rs-serp-summary.dk { background: ${RS.SERP_THEME.summary.dark.bg}; border-color: #39445A; color: ${RS.SERP_THEME.summary.dark.fg}; }
+#rs-serp-summary.dk .rs-brand { color: ${RS.SERP_THEME.summary.dark.brand}; }
+#rs-serp-summary .rs-sep { opacity: .35; }
+#rs-serp-summary .rs-dim { opacity: .65; }
+`;
+
   const S = {
     settings: null,
     engine: null,
+    lightTheme: true,
     items: new Map(),   // url → item
     chips: new Map(),   // url → [elements]
     done: false,
@@ -93,9 +137,53 @@
     });
     if (!S.engine) return;
 
+    ensureStyle();
     await waitForResults();
+    S.lightTheme = isLightHost();
     scan();
     observe();
+  }
+
+  /** 样式只注入一次；等级颜色随 data-v 与 lt/dk 类切换 */
+  function ensureStyle() {
+    if (document.getElementById(STYLE_ID)) return;
+    const st = document.createElement("style");
+    st.id = STYLE_ID;
+    st.textContent = SERP_CSS;
+    (document.head || document.documentElement).appendChild(st);
+  }
+
+  /** WCAG 相对亮度；解析不了或全透明返回 null（继续向上找） */
+  function bgLuminance(color) {
+    const m = /rgba?\(([^)]+)\)/.exec(color || "");
+    if (!m) return null;
+    const parts = m[1].split(/[,/\s]+/).filter(Boolean).map(Number);
+    if (parts.length < 3 || parts.slice(0, 3).some((n) => isNaN(n))) return null;
+    if (parts.length > 3 && parts[3] === 0) return null;
+    const f = (c) => {
+      c /= 255;
+      return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+    };
+    return 0.2126 * f(parts[0]) + 0.7152 * f(parts[1]) + 0.0722 * f(parts[2]);
+  }
+
+  /** 读结果容器的背景亮度选明暗套；链上拿不到实色时按浅色处理（搜索引擎默认浅色） */
+  function isLightHost() {
+    let el = document.querySelector(S.engine.container) || document.body;
+    for (let i = 0; i < 6 && el; i++, el = el.parentElement) {
+      let bg = null;
+      try {
+        bg = window.getComputedStyle(el).backgroundColor;
+      } catch (e) {}
+      const lum = bgLuminance(bg);
+      if (lum != null) return lum > 0.5;
+    }
+    return true;
+  }
+
+  function themeFor(verdict) {
+    const t = S.lightTheme ? RS.SERP_THEME.light : RS.SERP_THEME.dark;
+    return t[verdict] || t.pending;
   }
 
   function waitForResults() {
@@ -204,10 +292,11 @@
     const target = anchorNodeFor(item.node);
     if (!target || !target.parentNode) return;
     const chip = document.createElement("span");
-    chip.className = CHIP_CLASS;
+    chip.className = CHIP_CLASS + " " + (S.lightTheme ? "lt" : "dk");
     chip.dataset.state = "pending";
+    chip.dataset.v = "pending";
+    chip.dataset.marker = themeFor("pending").marker;
     chip.textContent = "…";
-    applyChipStyle(chip);
     try {
       target.parentNode.insertBefore(chip, target);
     } catch (e) {
@@ -217,36 +306,14 @@
     S.chips.get(item.url).push(chip);
   }
 
-  function applyChipStyle(el) {
-    // 用行内样式，避免依赖页面 CSS 变量；不改动宿主页已有样式
-    el.style.cssText = [
-      "display:inline-flex",
-      "align-items:center",
-      "gap:4px",
-      "font:600 11px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif",
-      "padding:1px 7px",
-      "margin-right:7px",
-      "border-radius:6px",
-      "vertical-align:middle",
-      "white-space:nowrap",
-      "letter-spacing:.2px",
-      "position:relative",
-      "top:-1px",
-      "cursor:help",
-      "transition:transform .15s ease",
-      "background:rgba(148,163,184,.16)",
-      "color:#64748B",
-      "border:1px solid rgba(148,163,184,.35)"
-    ].join(";");
-  }
-
   function paintChip(el, result) {
     const v = RS.VERDICT[result.verdict] || RS.VERDICT.unknown;
+    const known = ["read", "skim", "skip", "pending"].indexOf(result.verdict) !== -1;
+    const theme = themeFor(known ? result.verdict : "pending");
     const cred = typeof result.credibility === "number" ? " · " + result.credibility + "%" : "";
     el.textContent = v.label + cred;
-    el.style.background = hexA(v.color, 0.14);
-    el.style.color = v.color;
-    el.style.borderColor = hexA(v.color, 0.42);
+    el.dataset.v = known ? result.verdict : "pending";
+    el.dataset.marker = theme.marker;
     const tip = [];
     tip.push(v.label);
     if (typeof result.relevance === "number") tip.push("与你关注主题相关度 " + result.relevance + "%");
@@ -307,37 +374,27 @@
     if (!bar || !bar.isConnected) {
       bar = document.createElement("div");
       bar.id = "rs-serp-summary";
-      bar.style.cssText = [
-        "display:flex",
-        "align-items:center",
-        "gap:10px",
-        "flex-wrap:wrap",
-        "margin:6px 0 12px",
-        "padding:9px 12px",
-        "border-radius:10px",
-        "font:500 12px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif",
-        "background:linear-gradient(180deg,rgba(96,165,250,.10),rgba(96,165,250,.04))",
-        "border:1px solid rgba(96,165,250,.28)",
-        "color:#334155"
-      ].join(";");
+      bar.className = S.lightTheme ? "lt" : "dk";
 
       const host = document.querySelector(S.engine.container) || document.body;
       host.insertBefore(bar, host.firstChild);
       S.summaryEl = bar;
+    } else {
+      bar.className = S.lightTheme ? "lt" : "dk";
     }
 
     const dot = (color) =>
-      '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + color +
+      '<span class="rs-dot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + color +
       ';margin-right:5px;vertical-align:middle"></span>';
 
     bar.innerHTML =
-      '<span style="display:inline-flex;align-items:center;font-weight:700;color:#1D4ED8">Read or Skip</span>' +
-      '<span style="opacity:.35">|</span>' +
+      '<span class="rs-brand" style="display:inline-flex;align-items:center;font-weight:700">Read or Skip</span>' +
+      '<span class="rs-sep">|</span>' +
       '<span>' + dot(RS.VERDICT.read.color) + "值得读 <b>" + stats.read + "</b></span>" +
       '<span>' + dot(RS.VERDICT.skim.color) + "可扫 <b>" + stats.skim + "</b></span>" +
       '<span>' + dot(RS.VERDICT.skip.color) + "可跳过 <b>" + stats.skip + "</b></span>" +
-      (stats.pending ? '<span style="opacity:.6">评估中 ' + stats.pending + "</span>" : "") +
-      '<span style="margin-left:auto;opacity:.6">共 ' + total + " 条结果被标注</span>";
+      (stats.pending ? '<span class="rs-dim">评估中 ' + stats.pending + "</span>" : "") +
+      '<span class="rs-dim" style="margin-left:auto">共 ' + total + " 条结果被标注</span>";
   }
 
   function observe() {
@@ -361,13 +418,5 @@
     });
     mo.observe(root, { childList: true, subtree: true });
     S.seenUrl = location.href;
-  }
-
-  function hexA(hex, a) {
-    const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-    if (!m) return hex;
-    return (
-      "rgba(" + parseInt(m[1], 16) + "," + parseInt(m[2], 16) + "," + parseInt(m[3], 16) + "," + a + ")"
-    );
   }
 })(globalThis.RS);

@@ -2,10 +2,11 @@
  * Read or Skip —— 页面浮层（HUD）。
  *
  * 交互设计：
- *  - 页面加载后先出「本地估算」（毫秒级），模型结果到达后原地升级，不闪烁、不跳位。
+ *  - 页面加载后先出「初判」（毫秒级），模型结果到达后原地升级，不闪烁、不跳位。
  *  - 命中缓存或搜索结果预判时，几乎立刻给出结论。
- *  - 默认展开一览，9 秒后自动收成角标，避免长期遮挡内容；角标可拖动、可点击展开。
+ *  - 默认展开一览，超时后自动收成角标；焦点或指针在卡片上时不收起；角标可拖动、可点击展开。
  *  - 全部渲染在 Shadow DOM 内，不污染宿主页样式，也不被宿主页样式污染。
+ *  - 快捷键由 chrome.commands 统一路由（经 RS_TOGGLE_PANEL 消息），本脚本不抢页面按键。
  */
 (function (RS) {
   if (window !== window.top) return;
@@ -33,19 +34,32 @@
     busy: false,
     localElapsed: 0,
     skipped: null,
+    hover: false,
     bootAt: performance.now()
   };
 
   /* ================= 样式 ================= */
+  /* 令牌与 popup / options 共用同一套 --rs-*；Shadow DOM 里 :root 不可达，落在 :host 上。 */
 
   const CSS = `
-:host { all: initial; }
+:host {
+  all: initial;
+  --rs-canvas: #0C0E13; --rs-surface: #15181E; --rs-surface-2: #1E222A; --rs-field: #0A0C10;
+  --rs-border: #262B34; --rs-border-ctl: #5E6675; --rs-text: #EDEFF4; --rs-text-2: #9CA4B3;
+  --rs-accent: #3B82F6; --rs-focus: #7FB0FF; --rs-read: #4ADE9E; --rs-skim: #F2C14E;
+  --rs-skip: #A7B0BE; --rs-warn: #FBBF24; --rs-danger: #FD8A9B;
+}
 * { box-sizing: border-box; margin: 0; padding: 0; }
+[hidden] { display: none !important; }
+:focus-visible { outline: 2px solid var(--rs-focus); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}
 .wrap {
   position: fixed; z-index: 2147483646;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB",
                "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
-  font-size: 13px; line-height: 1.5; color: #E8EAF0;
+  font-size: 13px; line-height: 1.5; color: var(--rs-text);
   -webkit-font-smoothing: antialiased;
   transition: opacity .18s ease, transform .18s ease;
 }
@@ -55,19 +69,19 @@
 /* ---------- 角标 ---------- */
 .pill {
   display: flex; align-items: center; gap: 8px;
-  height: 40px; padding: 0 14px 0 12px;
+  height: 40px; padding: 0 16px 0 12px;
   border-radius: 999px; cursor: pointer; user-select: none;
   background: rgba(18,20,26,.90);
-  border: 1px solid rgba(255,255,255,.10);
-  box-shadow: 0 6px 24px rgba(0,0,0,.42), inset 0 1px 0 rgba(255,255,255,.06);
+  border: 1px solid var(--rs-border-ctl);
+  box-shadow: 0 6px 24px rgba(0,0,0,.42);
   backdrop-filter: blur(14px) saturate(160%);
   -webkit-backdrop-filter: blur(14px) saturate(160%);
-  transition: transform .16s cubic-bezier(.2,.8,.3,1), box-shadow .16s ease, border-color .16s ease;
+  transition: transform .16s cubic-bezier(.2,.8,.3,1), box-shadow .16s ease;
 }
-.pill:hover { transform: translateY(-2px); box-shadow: 0 12px 32px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.08); }
+.pill:hover { transform: translateY(-2px); box-shadow: 0 12px 32px rgba(0,0,0,.5); }
 .pill .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; box-shadow: 0 0 0 3px var(--glow); }
 .pill .plabel { font-weight: 600; letter-spacing: .2px; white-space: nowrap; }
-.pill .pscore { font-variant-numeric: tabular-nums; color: #9AA1AE; font-size: 12px; }
+.pill .pscore { font-variant-numeric: tabular-nums; color: var(--rs-text-2); font-size: 12px; }
 .pill .chev { opacity: .5; flex: none; }
 .pill.pending .dot { animation: rs-pulse 1.1s ease-in-out infinite; }
 @keyframes rs-pulse {
@@ -79,103 +93,94 @@
 
 /* ---------- 卡片 ---------- */
 .card {
-  width: 348px; border-radius: 18px; overflow: hidden;
-  background: linear-gradient(180deg, rgba(24,27,34,.96), rgba(16,18,23,.97));
-  border: 1px solid rgba(255,255,255,.09);
-  box-shadow: 0 18px 48px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.06);
+  width: 348px; border-radius: 12px; overflow: hidden;
+  background: rgba(21,24,30,.97);
+  border: 1px solid var(--rs-border);
+  box-shadow: 0 18px 48px rgba(0,0,0,.55);
   backdrop-filter: blur(18px) saturate(160%);
   -webkit-backdrop-filter: blur(18px) saturate(160%);
   transform-origin: bottom right;
   animation: rs-card-in .2s cubic-bezier(.2,.9,.3,1);
 }
 @keyframes rs-card-in { from { transform: translateY(6px) scale(.97); opacity: 0; } to { transform: none; opacity: 1; } }
-.card::before {
-  content: ""; display: block; height: 2px;
-  background: linear-gradient(90deg, transparent, var(--accent), transparent);
-  opacity: .9;
-}
 
-/* 顶栏 */
-.head { display: flex; align-items: center; gap: 12px; padding: 14px 14px 12px; cursor: grab; }
+/* 顶栏：判定词 20px 是唯一第一视觉，综合分是右端的等宽数字 */
+.head { display: flex; align-items: flex-start; gap: 12px; padding: 16px 16px 12px; cursor: grab; }
 .head:active { cursor: grabbing; }
-.ring { position: relative; width: 52px; height: 52px; flex: none; }
-.ring svg { display: block; transform: rotate(-90deg); }
-.ring .num {
-  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-  font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.3px;
-}
-.ring .num small { font-size: 9px; font-weight: 600; opacity: .6; margin-left: 1px; }
 .headtext { flex: 1; min-width: 0; }
-.verdict { font-size: 16px; font-weight: 700; letter-spacing: .2px; color: var(--accent); display: flex; align-items: center; gap: 6px; }
+.verdict { font-size: 20px; font-weight: 600; letter-spacing: .2px; color: var(--accent); display: flex; align-items: center; gap: 8px; line-height: 1.25; }
 .verdict .src {
-  font-size: 10px; font-weight: 600; color: #9AA1AE; border: 1px solid rgba(255,255,255,.14);
-  border-radius: 5px; padding: 1px 5px; letter-spacing: 0; white-space: nowrap;
+  font-size: 11.5px; font-weight: 600; color: var(--rs-text-2); border: 1px solid var(--rs-border-ctl);
+  border-radius: 4px; padding: 1px 6px; letter-spacing: 0; white-space: nowrap;
 }
-.reason { font-size: 11.5px; color: #A6ADBB; margin-top: 3px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.verdict .src.live { color: #93C5FD; border-color: rgba(96,165,250,.38); animation: rs-blink 1.5s ease-in-out infinite; }
+.verdict .src.live { color: var(--rs-focus); border-color: var(--rs-accent); animation: rs-blink 1.5s ease-in-out infinite; }
 @keyframes rs-blink { 0%,100% { opacity: 1 } 50% { opacity: .45 } }
+.reason { font-size: 12.5px; color: var(--rs-text-2); margin-top: 4px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.score {
+  flex: none; font-size: 13px; font-weight: 600; color: var(--rs-text-2);
+  font-variant-numeric: tabular-nums; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  padding-top: 4px;
+}
 .iconbtn {
-  flex: none; width: 26px; height: 26px; border-radius: 8px; border: 1px solid rgba(255,255,255,.10);
-  background: rgba(255,255,255,.04); color: #A6ADBB; cursor: pointer; display: grid; place-items: center;
+  position: relative; flex: none; width: 28px; height: 28px; border-radius: 8px; border: 1px solid var(--rs-border-ctl);
+  background: transparent; color: var(--rs-text-2); cursor: pointer; display: grid; place-items: center;
   transition: background .14s ease, color .14s ease;
 }
-.iconbtn:hover { background: rgba(255,255,255,.11); color: #fff; }
+.iconbtn::after { content: ""; position: absolute; inset: -8px; }
+.iconbtn:hover { background: var(--rs-surface-2); color: var(--rs-text); }
+
+/* 综合分刻度：同一像素位，真实数据替代装饰光条 */
+.scale { height: 2px; background: var(--rs-border); }
+.scalefill { display: block; height: 100%; width: 0; background: var(--accent);
+  transition: width .55s cubic-bezier(.2,.8,.25,1); }
 
 /* 警告 */
 .warn {
-  display: flex; align-items: flex-start; gap: 8px; margin: 0 14px 10px;
-  padding: 8px 10px; border-radius: 10px;
-  background: rgba(251,191,36,.10); border: 1px solid rgba(251,191,36,.28);
-  color: #FCD34D; font-size: 11.5px; line-height: 1.45;
+  display: flex; align-items: flex-start; gap: 8px; margin: 12px 16px 0;
+  padding: 8px 12px; border-radius: 8px;
+  background: rgba(251,191,36,.10); border: 1px solid var(--rs-warn);
+  color: var(--rs-warn); font-size: 12px; line-height: 1.45;
 }
-.warn.err { background: rgba(251,113,133,.10); border-color: rgba(251,113,133,.30); color: #FDA4AF; }
+.warn.err { background: rgba(253,138,155,.10); border-color: var(--rs-danger); color: var(--rs-danger); }
 .warn svg { flex: none; margin-top: 1px; }
-.warn .fix { color: #FDE68A; text-decoration: underline; cursor: pointer; }
-.warn.err .fix { color: #FECDD3; }
+.warn .fix { color: var(--rs-warn); text-decoration: underline; cursor: pointer; }
+.warn.err .fix { color: var(--rs-danger); }
 
-/* 指标 */
-.metrics { padding: 0 14px 4px; display: flex; flex-direction: column; gap: 9px; }
-.metric { display: grid; grid-template-columns: 62px 1fr 42px; align-items: center; gap: 9px; }
-.mlabel { font-size: 11.5px; color: #98A0AE; white-space: nowrap; }
-.track { height: 6px; border-radius: 3px; background: rgba(255,255,255,.075); overflow: hidden; position: relative; }
-.fill { height: 100%; border-radius: 3px; width: 0;
-  background: linear-gradient(90deg, var(--accent), var(--accent2));
-  transition: width .55s cubic-bezier(.2,.8,.25,1); position: relative; }
-.fill::after { content:""; position:absolute; inset:0; border-radius:3px;
-  background: linear-gradient(180deg, rgba(255,255,255,.28), transparent 60%); }
-.fill.skeleton { background: linear-gradient(90deg, rgba(255,255,255,.06) 25%, rgba(255,255,255,.16) 37%, rgba(255,255,255,.06) 63%);
-  background-size: 400% 100%; width: 100% !important; animation: rs-shimmer 1.25s ease infinite; }
-@keyframes rs-shimmer { from { background-position: 100% 0; } to { background-position: 0 0; } }
-.mval { font-size: 12px; font-variant-numeric: tabular-nums; text-align: right; color: #D6DAE3; font-weight: 600; }
-.mval.dim { color: #78808E; font-weight: 500; }
+/* 指标：数值条一律 accent 色相，不按高低换色 */
+.metrics { padding: 12px 16px 4px; display: flex; flex-direction: column; gap: 8px; }
+.metric { display: grid; grid-template-columns: 72px 1fr 44px; align-items: center; gap: 8px; }
+.mlabel { font-size: 12px; color: var(--rs-text-2); white-space: nowrap; }
+.track { height: 2px; border-radius: 999px; background: var(--rs-border); overflow: hidden; }
+.fill { height: 100%; border-radius: 999px; width: 0; background: var(--rs-accent);
+  transition: width .55s cubic-bezier(.2,.8,.25,1); }
+.fill.skeleton { background: var(--rs-border); width: 100% !important; }
+.mval { font-size: 12px; font-variant-numeric: tabular-nums; text-align: right; color: var(--rs-text); font-weight: 600; }
+.mval.dim { color: var(--rs-text-2); font-weight: 500; }
 
-/* 芯片行 */
-.chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 14px 0; }
+/* 芯片行：全部中性（次要文字色 + 细描边），只有警告类允许琥珀 */
+.chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 16px 0; }
 .chip {
-  font-size: 11px; padding: 3px 8px; border-radius: 7px;
-  background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.08); color: #A6ADBB;
-  display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
+  font-size: 12px; padding: 3px 8px; border-radius: 8px;
+  background: transparent; border: 1px solid var(--rs-border-ctl); color: var(--rs-text-2);
+  display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;
 }
-.chip b { color: #E8EAF0; font-weight: 600; }
-.chip.hi { background: rgba(52,211,153,.10); border-color: rgba(52,211,153,.26); color: #6EE7B7; }
-.chip.mid { background: rgba(251,191,36,.10); border-color: rgba(251,191,36,.26); color: #FCD34D; }
-.chip.lo { background: rgba(148,163,184,.10); border-color: rgba(148,163,184,.22); color: #A9B4C4; }
+.chip b { color: var(--rs-text); font-weight: 600; }
 
-/* 底栏 */
+/* 底栏：只留一个主按钮「重新评估」和一个关闭 */
 .foot { display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  margin-top: 12px; padding: 10px 14px; border-top: 1px solid rgba(255,255,255,.07); background: rgba(0,0,0,.14); }
-.footmeta { font-size: 10.5px; color: #7C8494; display: flex; align-items: center; gap: 5px; min-width: 0; overflow: hidden;
+  margin-top: 12px; padding: 8px 16px 12px; border-top: 1px solid var(--rs-border); }
+.footmeta { font-size: 12px; color: var(--rs-text-2); display: flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap; }
 .footmeta .sep { opacity: .4; }
-.footactions { display: flex; gap: 6px; flex: none; }
+.footactions { display: flex; gap: 8px; flex: none; }
 .tbtn {
-  font-size: 11px; font-family: inherit; padding: 4px 9px; border-radius: 7px; cursor: pointer;
-  background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.10); color: #B7BECC;
+  font-size: 12px; font-family: inherit; padding: 6px 12px; border-radius: 8px; cursor: pointer;
+  background: transparent; border: 1px solid var(--rs-border-ctl); color: var(--rs-text-2);
   transition: background .14s ease, color .14s ease; white-space: nowrap;
 }
-.tbtn:hover { background: rgba(255,255,255,.12); color: #fff; }
-.tbtn.primary { background: rgba(96,165,250,.14); border-color: rgba(96,165,250,.32); color: #93C5FD; }
-.tbtn.primary:hover { background: rgba(96,165,250,.24); color: #DBEAFE; }
+.tbtn:hover { background: var(--rs-surface-2); color: var(--rs-text); }
+.tbtn.primary { background: var(--rs-accent); border-color: transparent; color: #fff; font-weight: 600; }
+.tbtn.primary:hover { filter: brightness(1.12); }
 .tbtn[disabled] { opacity: .45; cursor: default; }
 `;
 
@@ -236,6 +241,8 @@
       }
     });
 
+    // 只保留 Escape 处理，且仅在焦点 / 指针位于浮层上时响应（见 onKey）。
+    // Alt+Shift+R 由 chrome.commands 统一路由，经 RS_TOGGLE_PANEL 消息进来。
     document.addEventListener("keydown", onKey, true);
     watchNavigation();
     await boot();
@@ -332,7 +339,7 @@
     wrap.innerHTML =
       '<div class="pill" role="button" tabindex="0" aria-label="Read or Skip 判定">' +
         '<span class="dot"></span>' +
-        '<span class="plabel">评估中</span>' +
+        '<span class="plabel">初判</span>' +
         '<span class="pscore"></span>' +
         '<span class="chev">' + ICON.chev + "</span>" +
       "</div>" +
@@ -344,6 +351,10 @@
     S.wrap = wrap;
     S.pill = wrap.querySelector(".pill");
     S.card = wrap.querySelector(".card");
+
+    // 指针是否悬停在浮层上：Escape 响应与自动收起都要看它
+    wrap.addEventListener("mouseenter", () => { S.hover = true; });
+    wrap.addEventListener("mouseleave", () => { S.hover = false; });
 
     applyPosition();
     bindDrag();
@@ -381,42 +392,40 @@
     if (!r) return;
 
     const v = RS.VERDICT[r.verdict] || RS.VERDICT.unknown;
-    const accent = r.source === "heuristic" ? "#60A5FA" : v.color;
-    const accent2 = r.source === "heuristic" ? "#818CF8" : shift(accent, 22);
+    const accent = r.source === "heuristic" ? "var(--rs-accent)" : v.color;
     S.wrap.style.setProperty("--accent", accent);
-    S.wrap.style.setProperty("--accent2", accent2);
     S.wrap.style.setProperty("--glow", v.glow);
     S.wrap.classList.toggle("pending", r.verdict === "pending");
 
     // 角标
     const score = composite(r);
     S.pill.querySelector(".dot").style.background = accent;
-    S.pill.querySelector(".plabel").textContent = r.source === "heuristic" ? "估算中" : v.short;
+    S.pill.querySelector(".plabel").textContent = r.source === "heuristic" ? "初判" : v.short;
     S.pill.querySelector(".plabel").style.color = accent;
     S.pill.querySelector(".pscore").textContent = score == null ? "" : score + "%";
 
     // 卡片
-    const pct = score == null ? "–" : String(score);
+    const pctText = score == null ? "–" : String(score);
+    const pctNum = score == null ? 0 : Math.max(0, Math.min(100, score));
     const srcTag = srcLabel(r);
 
     S.card.innerHTML =
       '<div class="head">' +
-        '<div class="ring">' + ringSvg(score, accent, accent2) +
-          '<div class="num" style="color:' + accent + '">' + pct + '<small>%</small></div>' +
-        "</div>" +
         '<div class="headtext">' +
           '<div class="verdict">' +
-            (r.source === "heuristic" ? "评估中…" : v.label) +
+            (r.source === "heuristic" ? "初判" : v.label) +
             '<span class="src">' + srcTag + "</span>" +
           "</div>" +
           '<div class="reason">' + esc(r.reason || "") + "</div>" +
         "</div>" +
+        '<span class="score">' + pctText + "%</span>" +
         '<button class="iconbtn" data-act="collapse" title="收起">' + ICON.collapse + "</button>" +
       "</div>" +
+      '<div class="scale"><span class="scalefill" style="width:' + pctNum.toFixed(1) + '%"></span></div>' +
       warnHTML(r) +
       '<div class="metrics">' +
         metric("相关度", r.relevance, r.source === "heuristic") +
-        metric("新信息程度", r.novelty, r.source === "heuristic") +
+        metric("新信息", r.novelty, r.source === "heuristic") +
         metric("可信度", r.credibility, r.source === "heuristic") +
         metric("时效性", r.timelessness, r.source === "heuristic") +
       "</div>" +
@@ -425,7 +434,6 @@
         '<div class="footmeta">' + footMeta(r) + "</div>" +
         '<div class="footactions">' +
           '<button class="tbtn primary" data-act="refresh">重新评估</button>' +
-          '<button class="tbtn" data-act="options">设置</button>' +
           '<button class="tbtn" data-act="close" title="本次不再显示">×</button>' +
         "</div>" +
       "</div>";
@@ -442,13 +450,14 @@
             btn.disabled = false;
             btn.textContent = "重新评估";
           });
-        } else if (act === "options") {
-          chrome.runtime.sendMessage({ type: RS.MSG.OPEN_OPTIONS });
         } else if (act === "close") {
           hide(true);
         }
       });
     });
+
+    // 内容变化会改变卡片高度：渲染完再定位一次
+    requestAnimationFrame(() => applyPosition());
 
     // 拖动把手只认头部空白区域
     bindHeadDrag();
@@ -510,8 +519,7 @@
     const out = [];
     if (r.value || r.valueKey) {
       const key = r.valueKey || r.value;
-      const tone = key === "high" ? "hi" : key === "medium" ? "mid" : "lo";
-      out.push('<span class="chip ' + tone + '">阅读价值 <b>' + esc(RS.VALUE_LABEL[key] || "–") + "</b></span>");
+      out.push('<span class="chip">阅读价值 <b>' + esc(RS.VALUE_LABEL[key] || "–") + "</b></span>");
     }
     if (r.contentType) {
       out.push('<span class="chip">' + esc(RS.CONTENT_TYPE_LABEL[r.contentType] || r.contentType) + "</span>");
@@ -538,7 +546,7 @@
   }
 
   function srcLabel(r) {
-    if (r.source === "heuristic") return "本地估算";
+    if (r.source === "heuristic") return "初判";
     if (r.source === "cache") return "缓存";
     if (r.source === "partial") return "预判";
     if (r.model) return String(r.model).replace(/^jev-/, "jev ");
@@ -558,25 +566,6 @@
     return Math.round(parts.reduce((a, p) => a + p[0] * p[1], 0) / total);
   }
 
-  function ringSvg(score, c1, c2) {
-    const r = 23;
-    const circ = 2 * Math.PI * r;
-    const pct = score == null ? 0 : Math.max(0, Math.min(100, score));
-    const dash = (pct / 100) * circ;
-    const gid = "rsg" + Math.random().toString(36).slice(2, 7);
-    return (
-      '<svg width="52" height="52" viewBox="0 0 52 52">' +
-        "<defs><linearGradient id='" + gid + "' x1='0' y1='0' x2='1' y2='1'>" +
-          "<stop offset='0' stop-color='" + c1 + "'/><stop offset='1' stop-color='" + c2 + "'/>" +
-        "</linearGradient></defs>" +
-        "<circle cx='26' cy='26' r='" + r + "' fill='none' stroke='rgba(255,255,255,.09)' stroke-width='4.5'/>" +
-        "<circle cx='26' cy='26' r='" + r + "' fill='none' stroke='url(#" + gid + ")' stroke-width='4.5' " +
-          "stroke-linecap='round' stroke-dasharray='" + dash.toFixed(2) + " " + circ.toFixed(2) + "' " +
-          "style='transition:stroke-dasharray .6s cubic-bezier(.2,.8,.25,1)'/>" +
-      "</svg>"
-    );
-  }
-
   function setBusyUI(on) {
     if (!S.mounted) return;
     S.wrap.classList.toggle("pending", on || (S.result && S.result.source === "heuristic"));
@@ -594,7 +583,10 @@
       const ms = (S.settings && S.settings.hudAutoCollapseMs) || 9000;
       if (ms > 0) {
         S.collapseTimer = setTimeout(() => {
-          if (!S.card.matches(":hover")) expand(false);
+          // 键盘用户把焦点移进卡片、或指针悬停在卡片上时，不打断阅读
+          const ae = (S.shadow && S.shadow.activeElement) || null;
+          const focusInside = !!(ae && S.card.contains(ae));
+          if (!focusInside && !S.hover && !S.card.matches(":hover")) expand(false);
         }, ms);
       }
     }
@@ -606,9 +598,10 @@
   async function applyPosition() {
     if (!S.wrap) return;
     const saved = (await RS.storage.rawGet(POS_KEY)) || null;
-    const cardW = 348;
-    const w = S.expanded ? cardW : 150;
-    const h = S.expanded ? 300 : 40;
+    // 实测尺寸，替代硬编码估计值（卡片高度随警告条与芯片数量变化）
+    const rect = S.wrap.getBoundingClientRect();
+    const w = rect.width || (S.expanded ? 348 : 150);
+    const h = rect.height || (S.expanded ? 300 : 40);
     let left;
     let top;
     if (saved && typeof saved.left === "number") {
@@ -639,6 +632,8 @@
       const rect = S.wrap.getBoundingClientRect();
       const ox = rect.left;
       const oy = rect.top;
+      const w = rect.width || (S.expanded ? 348 : 150);
+      const h = rect.height || (S.expanded ? 300 : 40);
       let moved = false;
 
       const onMove = (ev) => {
@@ -647,8 +642,6 @@
         if (!moved && Math.abs(dx) + Math.abs(dy) < 4) return;
         moved = true;
         S.wrap.classList.add("dragging");
-        const w = S.expanded ? 348 : 150;
-        const h = S.expanded ? 300 : 40;
         S.wrap.style.left = Math.min(Math.max(4, ox + dx), window.innerWidth - w - 4) + "px";
         S.wrap.style.top = Math.min(Math.max(4, oy + dy), window.innerHeight - h - 4) + "px";
       };
@@ -720,12 +713,18 @@
     }, 700);
   }
 
+  /**
+   * 只处理 Escape，且有条件响应：焦点在卡片内、或指针悬停在浮层上时才收起，
+   * 并阻断传播，避免吃掉宿主页自己的 Esc 行为（反向：也不让宿主页抢走收起动作）。
+   */
   function onKey(e) {
-    if (e.altKey && e.shiftKey && (e.key === "R" || e.key === "r")) {
-      e.preventDefault();
-      toggle();
-    }
-    if (e.key === "Escape" && S.expanded) expand(false);
+    if (e.key !== "Escape" || !S.expanded) return;
+    const ae = (S.shadow && S.shadow.activeElement) || null;
+    const focusInside = !!(ae && S.card.contains(ae));
+    if (!focusInside && !S.hover) return;
+    e.stopPropagation();
+    e.preventDefault();
+    expand(false);
   }
 
   function toggle() {
@@ -774,12 +773,5 @@
     return String(s == null ? "" : s).replace(/[&<>"']/g, (c) =>
       ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])
     );
-  }
-
-  function shift(hex, amt) {
-    const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-    if (!m) return hex;
-    const c = [1, 2, 3].map((i) => Math.max(0, Math.min(255, parseInt(m[i], 16) + amt)));
-    return "#" + c.map((x) => x.toString(16).padStart(2, "0")).join("");
   }
 })(globalThis.RS);

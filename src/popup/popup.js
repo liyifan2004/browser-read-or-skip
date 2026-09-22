@@ -17,7 +17,7 @@
     tabId = tab && tab.id;
 
     if (!tabId) {
-      showUnsupported("无法获取当前标签页。");
+      showUnsupported("页面还没就绪", "无法获取当前标签页。");
       return;
     }
 
@@ -29,21 +29,23 @@
     }
 
     if (!res || !res.ok) {
+      // 两句结构：先说状态，再给可执行动作
+      const internal =
+        tab && tab.url && /^(chrome|edge|about|chrome-extension|devtools):/i.test(tab.url);
       showUnsupported(
-        tab && tab.url && /^(chrome|edge|about|chrome-extension|devtools):/i.test(tab.url)
-          ? "浏览器内部页面不允许扩展注入脚本。"
-          : "此页面可能仍在加载，或扩展刚安装还未生效。刷新页面后重试。"
+        internal ? "浏览器内部页面" : "页面还没就绪",
+        internal ? "内部页面不允许扩展注入脚本。" : "刷新后重试。"
       );
     } else if (res.skipped === "serp") {
-      showUnsupported("这是搜索结果页。等级与可信度已经直接标在每条结果上，不再弹浮层。");
+      showUnsupported("搜索结果页", "等级与可信度已经直接标在每条结果上，不再弹浮层。");
     } else if (res.skipped === "off") {
-      showUnsupported("浮层已在设置里关闭。打开上方「页面浮层」开关即可恢复。");
+      showUnsupported("浮层已关闭", "浮层已在设置里关闭。打开上方「页面浮层」开关即可恢复。");
     } else if (res.skipped === "blocked") {
-      showUnsupported("这个站点在「跳过评估」名单里。可以在设置里删掉对应规则。");
+      showUnsupported("站点已跳过", "这个站点在「跳过评估」名单里。可以在设置里删掉对应规则。");
     } else if (res.skipped === "not-readable") {
-      showUnsupported("这不是一个可读的正文页（可能是应用页、登录页或非 HTML 内容）。");
+      showUnsupported("不是可读页面", "这不是一个可读的正文页（可能是应用页、登录页或非 HTML 内容）。");
     } else if (!res.result) {
-      showUnsupported("页面已就绪，但还没有产生判定结果。点下方「重新评估」试试。");
+      showUnsupported("页面还没就绪", "页面已就绪，但还没有产生判定结果。点下方「重新评估」试试。");
     } else {
       renderResult(res.result, res.page);
     }
@@ -56,7 +58,6 @@
     $("tg-serp").addEventListener("change", (e) => RS.storage.saveSettings({ annotateSerp: e.target.checked }));
 
     $("gear").addEventListener("click", openOptions);
-    $("openOptions").addEventListener("click", openOptions);
     $("reeval").addEventListener("click", async () => {
       const btn = $("reeval");
       btn.disabled = true;
@@ -77,11 +78,12 @@
     window.close();
   }
 
-  function showUnsupported(msg) {
+  function showUnsupported(title, desc) {
     $("loading").hidden = true;
     $("card").hidden = true;
     $("unsupported").hidden = false;
-    $("udesc").textContent = msg;
+    $("utitle").textContent = title;
+    $("udesc").textContent = desc;
   }
 
   function renderResult(r, page) {
@@ -90,18 +92,18 @@
 
     const v = RS.VERDICT[r.verdict] || RS.VERDICT.unknown;
     const score = composite(r);
-    const accent = r.source === "heuristic" ? "#60a5fa" : v.color;
+    // 判定色只用于结论；数值条统一用 accent 色相
+    const verdictColor = r.source === "heuristic" ? "var(--rs-accent)" : v.color;
 
     $("verdictwrap").hidden = false;
-    $("ring").innerHTML = ring(score, accent) +
-      '<div class="num" style="color:' + accent + '">' + (score == null ? "–" : score) + "<small>%</small></div>";
-    $("vlabel").textContent = v.label + (r.source === "heuristic" ? "（本地估算）" : "");
-    $("vlabel").style.color = accent;
+    $("vlabel").textContent = v.label + (r.source === "heuristic" ? "（初判）" : "");
+    $("vlabel").style.color = verdictColor;
+    $("score").textContent = score == null ? "–" : score + "%";
     $("vreason").textContent = r.reason || "";
 
     const rows = [
       ["相关度", r.relevance],
-      ["新信息程度", r.novelty],
+      ["新信息", r.novelty],
       ["可信度", r.credibility],
       ["时效性", r.timelessness]
     ].filter((x) => typeof x[1] === "number");
@@ -112,25 +114,24 @@
         .map(
           ([label, val]) =>
             '<div class="metric"><span class="mlabel">' + label + "</span>" +
-            '<span class="track"><span class="fill" style="width:' + Math.max(2, val) + "%;background:" + accent + '"></span></span>' +
+            '<span class="track"><span class="fill" style="width:' + Math.max(2, val) + '%"></span></span>' +
             '<span class="mval">' + val + "%</span></div>"
         )
         .join("");
     }
 
     const chips = [];
-    if (r.warning === "redundant") chips.push(['<span class="chip warn">⚠️ 可能没有太多新信息</span>', true]);
+    if (r.warning === "redundant") chips.push('<span class="chip warn">⚠️ 可能没有太多新信息</span>');
     if (r.valueKey || r.value) {
       const k = r.valueKey || r.value;
-      const tone = k === "high" ? "hi" : k === "medium" ? "mid" : "lo";
-      chips.push(['<span class="chip ' + tone + '">阅读价值 <b>' + (RS.VALUE_LABEL[k] || "–") + "</b></span>", true]);
+      chips.push('<span class="chip">阅读价值 <b>' + (RS.VALUE_LABEL[k] || "–") + "</b></span>");
     }
-    if (r.contentType) chips.push(['<span class="chip">' + (RS.CONTENT_TYPE_LABEL[r.contentType] || r.contentType) + "</span>", true]);
-    if (r.readingMinutes) chips.push(['<span class="chip">约 <b>' + r.readingMinutes + "</b> 分钟</span>", true]);
-    if (r.lowConfidence) chips.push(['<span class="chip warn">置信度偏低 ' + Math.round(r.confidence * 100) + "%</span>", true]);
+    if (r.contentType) chips.push('<span class="chip">' + (RS.CONTENT_TYPE_LABEL[r.contentType] || r.contentType) + "</span>");
+    if (r.readingMinutes) chips.push('<span class="chip">约 <b>' + r.readingMinutes + "</b> 分钟</span>");
+    if (r.lowConfidence) chips.push('<span class="chip warn">置信度偏低 ' + Math.round(r.confidence * 100) + "%</span>");
     if (chips.length) {
       $("chips").hidden = false;
-      $("chips").innerHTML = chips.map((c) => c[0]).join("");
+      $("chips").innerHTML = chips.join("");
     }
 
     const meta = [];
@@ -164,20 +165,6 @@
     if (!parts.length) return null;
     const total = parts.reduce((a, p) => a + p[1], 0);
     return Math.round(parts.reduce((a, p) => a + p[0] * p[1], 0) / total);
-  }
-
-  function ring(score, color) {
-    const r = 25;
-    const circ = 2 * Math.PI * r;
-    const pct = score == null ? 0 : Math.max(0, Math.min(100, score));
-    const dash = (pct / 100) * circ;
-    return (
-      '<svg width="56" height="56" viewBox="0 0 56 56">' +
-      "<circle cx='28' cy='28' r='" + r + "' fill='none' stroke='rgba(255,255,255,.09)' stroke-width='4.5'/>" +
-      "<circle cx='28' cy='28' r='" + r + "' fill='none' stroke='" + color + "' stroke-width='4.5' stroke-linecap='round' " +
-      "stroke-dasharray='" + dash.toFixed(2) + " " + circ.toFixed(2) + "'/>" +
-      "</svg>"
-    );
   }
 
   function esc(s) {

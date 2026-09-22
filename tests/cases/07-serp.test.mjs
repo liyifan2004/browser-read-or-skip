@@ -82,7 +82,7 @@ describe("serp / Google 结果标注", () => {
     const env = bootSerp("https://www.google.com/search?q=x", GOOGLE_HTML);
     await waitFor(() => env.doc.querySelectorAll(CHIP).length >= 1, { label: "徽章出现" });
     const h3 = env.doc.querySelector("#search .MjjYud h3");
-    a.equal(h3.previousElementSibling.className, "rs-serp-chip", "徽章应是标题的前一个兄弟节点");
+    a.includes(h3.previousElementSibling.className, "rs-serp-chip", "徽章应是标题的前一个兄弟节点");
     a.includes(h3.textContent, "扩展开发官方文档", "标题本身不能被改动");
   });
 
@@ -193,14 +193,32 @@ describe("serp / 其他引擎", () => {
     env.win.close();
   });
 
-  it("徽章样式自包含，不依赖宿主页 CSS", async () => {
+  it("徽章样式集中在注入的 style 节点里，不依赖宿主页 CSS", async () => {
     const env = bootSerp("https://www.google.com/search?q=x", GOOGLE_HTML);
     await waitFor(() => env.doc.querySelectorAll(CHIP).length >= 1, { label: "徽章出现" });
-    const chip = env.doc.querySelector(CHIP);
-    const css = chip.getAttribute("style");
+    const style = env.doc.getElementById("rs-serp-style");
+    a.ok(style, "应注入一次性的样式节点");
+    const css = style.textContent;
     a.includes(css, "inline-flex");
     a.includes(css, "border-radius");
     a.includes(css, "background");
     a.gt(css.length, 200, "样式应写全，不能靠宿主页补");
+
+    const chip = env.doc.querySelector(CHIP);
+    a.includes(chip.className, "rs-serp-chip");
+    a.includes(chip.className, "lt", "jsdom 拿不到背景色，应落到浅色主题");
+  });
+
+  it("评估结果带等级属性与非颜色线索", async () => {
+    const env = bootSerp("https://www.google.com/search?q=x", GOOGLE_HTML);
+    await waitFor(() => {
+      const chips = [...env.doc.querySelectorAll(CHIP)];
+      return chips.length >= 2 && chips.every((c) => c.dataset.state === "done");
+    }, { label: "徽章填上结果" });
+    const chips = [...env.doc.querySelectorAll(CHIP)];
+    a.equal(chips[0].dataset.v, "read");
+    a.equal(chips[0].dataset.marker, "dot-solid", "值得读档的线索应是实心点");
+    a.equal(chips[1].dataset.v, "skip");
+    a.equal(chips[1].dataset.marker, "dash", "可跳过档的线索应是短横");
   });
 });
