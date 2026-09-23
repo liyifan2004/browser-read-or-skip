@@ -23,5 +23,7 @@ npm-debug.log*
 # 本地检查 / 调试产物
 _*
 
-# 助手工作目录（项目记忆等）
+# 助手工作目录（项目记忆等）— never commit
 .workbuddy/
+.claude/
+.agents/
