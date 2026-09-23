@@ -1,5 +1,9 @@
 # Read or Skip
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
+[![Manifest V3](https://img.shields.io/badge/Chrome-Manifest%20V3-4285F4.svg?style=flat-square)](https://developer.chrome.com/docs/extensions/develop/concepts/manifest-v3)
+[![Tests](https://img.shields.io/badge/tests-218%20cases-brightgreen?style=flat-square)](tests/)
+
 浏览器扩展（Chrome / Edge，Manifest V3）。打开网页后立刻判断这个页面**值得认真读 / 快速扫 / 可以跳过**，并给出相关度、新信息程度、阅读价值、信息可信度。在搜索结果页上直接给每条结果打等级。
 
 判定由 [TypeSafe AI 的 Jev 决策模型](https://typesafe.ai) 完成 —— 它不生成文字，只返回可被代码直接使用的结构化决策（概率、选项、评分），所以足够快、足够便宜。
@@ -210,4 +214,4 @@ node tools/bench_latency.mjs
 
 ## License
 
-MIT
+[MIT](LICENSE)
