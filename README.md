@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/icon.png" alt="Read or Skip icon" width="96" />
+</p>
+
 # Read or Skip
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
