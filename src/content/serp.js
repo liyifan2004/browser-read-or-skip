@@ -5,15 +5,19 @@
  * 并在结果列表顶部插入一行汇总条。
  * 副产品：评估结果会写入按 URL 索引的缓存，点进结果页时浮层可以瞬时给出结论。
  *
- * 样式策略（两层）：
+ * 样式策略（三层）：
  * 1. 徽章渲染在自己的 Shadow DOM 里（hud.js 同款方案）：
  *    宿主 <span class="rs-serp-host"> 放在标题 <a> 内部、<h3> 之前（与标题同一行），
- *    徽章本体在宿主的 shadow root 中。页面 CSS 无法选中 shadow root 内部的元素，
- *    宿主页任何规则（包括 CSS Transforms Level 2 的独立属性 scale / rotate / translate
- *    —— transform: none 压不住它们，是上一轮翻转修复失败的根因）都打不到徽章，
- *    属于结构性根除，不再依赖猜测对方用了什么属性。
+ *    徽章本体在宿主的 shadow root 中。页面 CSS 无法选中 shadow root 内部的元素。
  * 2. 汇总条 #rs-serp-summary 留在 light DOM，样式集中在一次注入的
  *    <style id="rs-serp-style"> 里（只含汇总条规则，不含徽章选择器）。
+ * 3. 最后一道保险：徽章挂载后沿宿主祖先链审计计算样式（transform 族 / 排版属性）。
+ *    三轮样式隔离（改类名 / 移出 <a> / Shadow DOM）都没修掉 Google 深色页上的
+ *    徽章翻转，说明宿主页有条带 !important 的规则命中了宿主或祖先——按 CSS Scoping
+ *    规范，外层文档的 !important 声明胜过 shadow host 的声明，:host 里的防御天生
+ *    打不赢，所以不能在样式层面硬压，改走「审计取证 + 物理脱离」：一旦发现污染，
+ *    该徽章的宿主被 document.body 收养（浮层挂在 body 上三年不出问题），切为
+ *    overlay 模式（position:absolute + 标题矩形定位），审计结论写进宿主 title。
  * 明暗主题按结果容器背景的相对亮度选择（> 0.5 视为浅色页），
  * shadow 内用 :host { all: initial } 起手后把徽章样式全部显式重设。
  * 每档等级除颜色外还有非颜色线索：实心点（read）/ 空心底（skim）/ 短横（skip）。
@@ -93,7 +97,10 @@
      再显式重设徽章所需的全部属性。
      防御清单里除 transform 外必须包含 CSS Transforms Level 2 的三个独立属性
      scale / rotate / translate——transform: none 对它们无效，这是上一轮
-     「徽章 180° 翻转」修复失败的盲区；filter 一并防御（invert 也会造成视觉翻转）。 */
+     「徽章 180° 翻转」修复失败的盲区；filter 一并防御（invert 也会造成视觉翻转）。
+     注意：外层文档带 !important 的规则在 shadow host 上仍然打赢 :host 里的
+     !important（CSS Scoping 规范），所以这些防御只是第一层，真正的兜底是
+     挂载后的样式审计 + 污染自动切换 overlay（见 diagnoseHost）。 */
   const SERP_CSS = `
 :host {
   all: initial;
@@ -104,6 +111,12 @@
   translate: none !important; filter: none !important;
   direction: ltr !important; unicode-bidi: isolate !important;
   writing-mode: horizontal-tb !important;
+}
+:host(.rs-serp-overlay) {
+  /* overlay 模式：宿主已被收养到 body，这里只做定位兜底（left/top 由内联样式给出） */
+  position: absolute !important;
+  z-index: 2147483640 !important;
+  margin: 0 !important;
 }
 .${CHIP_CLASS} {
   display: inline-flex; align-items: center; gap: 5px;
@@ -155,9 +168,10 @@
     engine: null,
     lightTheme: true,
     items: new Map(),   // url → item
-    chips: new Map(),   // url → [{ host, chip }]（host 是 light DOM 宿主，chip 在其 shadow root 里）
+    chips: new Map(),   // url → [{ host, chip, titleEl }]（host 是 light DOM 宿主，chip 在其 shadow root 里，titleEl 用于 overlay 定位）
     done: false,
-    summaryEl: null
+    summaryEl: null,
+    resizeBound: false  // resize 重测监听只绑一次
   };
 
   init().catch(() => {});
@@ -332,7 +346,9 @@
    *   解决徽章位置偏上的问题）；
    * - 徽章本体在宿主的 shadow root 里，页面 CSS 选不到它——宿主页任何规则
    *   （不管是不是 transform 类）都无法命中，结构性根除翻转问题；
-   * - S.chips 存 { host, chip } 句柄，paintChip 只操作 shadow 内部的 chip。
+   * - S.chips 存 { host, chip, titleEl } 句柄，paintChip 只操作 shadow 内部的 chip，
+   *   titleEl（标题挂载点）供污染自愈后的 overlay 定位使用；
+   * - 挂载后立即做宿主样式审计（diagnoseHost），发现污染自动切 overlay 模式。
    */
   function placeChip(item) {
     const target = anchorNodeFor(item.node);
@@ -360,36 +376,195 @@
     } catch (e) {
       return;
     }
+    const handle = { host, chip, titleEl: mountPoint };
     if (!S.chips.has(item.url)) S.chips.set(item.url, []);
-    S.chips.get(item.url).push({ host, chip });
-    diagnoseHost(host);
+    S.chips.get(item.url).push(handle);
+    diagnoseHost(handle);
+  }
+
+  /* ===== 宿主样式审计 + 污染自愈 =====
+     三轮样式隔离（改类名 / 移出 <a> / Shadow DOM）都没能修掉 Google 深色页上
+     徽章 180° 翻转，说明宿主页有条带 !important 的规则命中了徽章的宿主或祖先——
+     按 CSS Scoping 规范，外层文档的 !important 声明胜过 shadow host 的声明，
+     :host 里的防御天生打不赢。所以策略改为：先审计取证，再物理脱离。 */
+
+  /* ===== 审计基线与自家防御 CSS 的耦合（第四轮事故根因，改防御 CSS 必须同步这里） =====
+     审计对象包含 shadow 内的 chip 与宿主自身，它们的计算值来自我们注入的 SERP_CSS：
+     :host 与 .rs-serp-chip 都写了带 !important 的防御声明，真实浏览器里
+     getComputedStyle 会返回这些防御值（如 unicode-bidi: isolate）。因此
+     AUDIT_PROPS 的基线必须是「自家防御值」，而不是 CSS 规范默认值——否则每枚
+     徽章都会被自家的 isolate 判成污染、全部误切 overlay（jsdom 不级联 shadow
+     样式表所以测不出来，真实 Chrome 必现）。
+     tests/cases/07-serp.test.mjs「QA 第四轮固化契约」有逐项一致性用例兜底。 */
+  const AUDIT_PROPS = {
+    transform: "none",
+    scale: "none",
+    rotate: "none",
+    translate: "none",
+    filter: "none",
+    "backdrop-filter": "none",
+    "writing-mode": "horizontal-tb",
+    /* chip / host 基线 ltr：我们强制 ltr，若计算值不是 ltr 说明有外层 !important
+       盖过了我们的防御——那是真污染，要抓。祖先链另用文档根方向做基线（见下）。 */
+    direction: "ltr",
+    "text-orientation": "mixed"
+  };
+  /* 允许集合：命中集合内任一值都算干净（区别于 AUDIT_PROPS 的单值基线）。
+     unicode-bidi: isolate 是自家防御值（SERP_CSS 在 :host 与 .rs-serp-chip 上的
+     !important 声明），必须放行；出现 bidi-override 之类才算污染。 */
+  const AUDIT_ALLOW_SETS = {
+    "unicode-bidi": ["normal", "isolate"]
+  };
+  /* 祖先链专用基线：direction 以 documentElement 的实际计算方向为准——
+     阿拉伯语 / 希伯来语等 RTL 语言的搜索页，祖先 direction=rtl 是合法排版，
+     不能按 ltr 基线误判成污染。懒计算并缓存（每窗口只读一次）。 */
+  const AUDIT_ANCESTOR_BASIS = { direction: "root" };
+  let cachedRootDirection = null;
+  function ancestorBaseline(prop) {
+    if (AUDIT_ANCESTOR_BASIS[prop] !== "root") return AUDIT_PROPS[prop];
+    if (cachedRootDirection == null) {
+      try {
+        const v = window.getComputedStyle(document.documentElement).direction;
+        cachedRootDirection = typeof v === "string" && v ? v : "ltr";
+      } catch (e) {
+        cachedRootDirection = "ltr";
+      }
+    }
+    return cachedRootDirection;
+  }
+  const AUDIT_MAX_DEPTH = 16;
+  const OVERLAY_CLASS = "rs-serp-overlay";
+  /* overlay 的 z-index：低于浮层的 2147483646，仍盖过一切页面内容 */
+  const OVERLAY_Z = "2147483640";
+
+  /**
+   * 沿宿主祖先链审计计算样式：shadow 内的 chip、宿主自身（depth 0）、
+   * 祖先（depth 1..16，直到 documentElement）。逐属性读 getComputedStyle，
+   * 与默认值比对，收集全部偏离项。读不到（抛错 / 空串 / undefined）就跳过该属性。
+   * @returns {Array<{depth:number|string, tag:string, cls:string, prop:string, value:string}>}
+   */
+  function auditHostStyles(host, chip) {
+    const findings = [];
+    const targets = [];
+    if (chip) targets.push({ el: chip, depth: "shadow" });
+    targets.push({ el: host, depth: 0 });
+    let anc = host.parentElement;
+    for (let d = 1; anc && d <= AUDIT_MAX_DEPTH; d++, anc = anc.parentElement) {
+      targets.push({ el: anc, depth: d });
+    }
+    for (const t of targets) {
+      if (!t.el) continue;
+      let cs = null;
+      try {
+        cs = window.getComputedStyle(t.el);
+      } catch (e) {
+        continue;
+      }
+      if (!cs) continue;
+      /* chip（"shadow"）与宿主（0）按自家防御值基线判；祖先链上 direction
+         改用文档根方向基线（RTL 语言页面合法），其余属性基线不变。 */
+      const isOwnLayer = t.depth === "shadow" || t.depth === 0;
+      for (const prop of Object.keys(AUDIT_PROPS)) {
+        let val = null;
+        try {
+          val = cs[prop];
+        } catch (e) {
+          continue;
+        }
+        if (typeof val !== "string" || val === "") continue;
+        const allowed = AUDIT_ALLOW_SETS[prop]
+          ? AUDIT_ALLOW_SETS[prop].indexOf(val) !== -1
+          : false;
+        const baseline = isOwnLayer ? AUDIT_PROPS[prop] : ancestorBaseline(prop);
+        if (allowed || val === baseline) continue;
+        findings.push({
+          depth: t.depth,
+          tag: String(t.el.tagName || "").toLowerCase(),
+          cls: typeof t.el.className === "string" ? t.el.className : "",
+          prop,
+          value: val
+        });
+      }
+    }
+    return findings;
+  }
+
+  /** 审计结论文案，例：样式被宿主页改写：depth3 div.rs-pollute transform=rotate(180deg) */
+  function auditSummary(findings) {
+    return "样式被宿主页改写：" + findings.map((f) => {
+      const cls = f.cls ? "." + f.cls.trim().split(/\s+/).join(".") : "";
+      return "depth" + f.depth + " " + f.tag + cls + " " + f.prop + "=" + f.value;
+    }).join("；");
+  }
+
+  /** 宿主 title = 审计结论（如有）+ 原 tooltip，两条信息都不丢 */
+  function withAuditNote(host, tip) {
+    if (!host) return tip;
+    const note = host.dataset.rsAudit || "";
+    return note ? note + "\n" + tip : tip;
   }
 
   /**
-   * 诊断：万一用户那边徽章仍被宿主页样式改写（如翻转），这条日志能一击定位。
-   * 渲染后读取宿主（light DOM，页面样式可直接命中它）的计算样式，
-   * 任何 transform 族 / filter 属性非默认值即告警。
+   * 污染自愈：把宿主从被污染的祖先链里摘出来，挂到 document.body 上
+   * （浮层挂在 body 上三年不出问题，正是这条路径可靠性的实证），
+   * 改为绝对定位贴住标题上沿。paintChip / tooltip / data-marker 等后续
+   * 操作都只碰 shadow 内部的 chip，与宿主挂在哪里无关。
    */
-  function diagnoseHost(host) {
+  function promoteToOverlay(handle) {
+    const host = handle && handle.host;
+    if (!host || !host.isConnected || host.classList.contains(OVERLAY_CLASS)) return;
+    host.classList.add(OVERLAY_CLASS);
+    host.style.position = "absolute";
+    host.style.zIndex = OVERLAY_Z;
+    document.body.appendChild(host);
+    positionOverlay(handle);
+  }
+
+  /** 用标题元素的视口矩形 + 页面滚动量换算文档坐标，把宿主钉在标题上沿往上 2px */
+  function positionOverlay(handle) {
+    const host = handle && handle.host;
+    const titleEl = handle && handle.titleEl;
+    if (!host || !titleEl || !host.isConnected || !titleEl.isConnected) return;
+    if (!host.classList.contains(OVERLAY_CLASS)) return;
+    try {
+      const rect = titleEl.getBoundingClientRect();
+      const scrollX = window.scrollX || window.pageXOffset || 0;
+      const scrollY = window.scrollY || window.pageYOffset || 0;
+      host.style.left = Math.round(rect.left + scrollX) + "px";
+      host.style.top = Math.round(rect.top + scrollY - 2) + "px";
+    } catch (e) {}
+  }
+
+  /** 结果重排 / 窗口尺寸变化会让 overlay 漂移，对已存在的 overlay 重新测量 */
+  function repositionOverlays() {
+    S.chips.forEach((handles) => {
+      for (const h of handles) positionOverlay(h);
+    });
+  }
+
+  /**
+   * 徽章挂载后延迟一帧审计：沿祖先链（≤16 层）读计算样式，发现任何偏离默认值的
+   * transform 族 / 排版属性，就把结论写进宿主 title（悬停即可看到，不需要会
+   * DevTools）并 console.warn 完整清单，同时把该徽章切到 overlay 模式
+   * （物理脱离被污染的祖先链）。未检测到污染的徽章维持文档流现状，零回归。
+   */
+  function diagnoseHost(handle) {
+    const host = handle && handle.host;
+    const chip = handle && handle.chip;
     setTimeout(() => {
       try {
-        const cs = window.getComputedStyle(host);
-        const bad = {};
-        for (const p of ["transform", "scale", "rotate", "translate", "filter"]) {
-          const val = cs[p];
-          if (val && val !== "none") bad[p] = val;
-        }
-        if (Object.keys(bad).length) {
-          console.warn(
-            "[Read or Skip] 徽章宿主被宿主页样式改写",
-            Object.assign({ class: host.className, expected: "shadow DOM 隔离下不应命中宿主样式" }, bad)
-          );
-        }
+        const findings = auditHostStyles(host, chip);
+        if (!findings.length) return;
+        const summary = auditSummary(findings);
+        host.dataset.rsAudit = summary;
+        host.title = withAuditNote(host, host.title || "");
+        console.warn("[Read or Skip] " + summary + "，该徽章已自动切换为 overlay 模式", findings.slice());
+        promoteToOverlay(handle);
       } catch (e) {}
     }, 0);
   }
 
-  /** paintChip 只碰 shadow 内部的 chip；提示同时写在 chip 与宿主上（悬停宿主也能看到） */
+  /** paintChip 只碰 shadow 内部的 chip；提示同时写在 chip 与宿主上（悬停宿主也能看到），审计结论保留在前 */
   function paintChip(handle, result) {
     const chip = handle && handle.chip ? handle.chip : handle;
     const host = handle && handle.host ? handle.host : null;
@@ -407,7 +582,7 @@
     if (typeof result.credibility === "number") tip.push("信息可信度 " + result.credibility + "%");
     if (result.warning === "intent") tip.push("⚠️ 可能名不副实 / 商业页");
     chip.title = tip.join("\n");
-    if (host) host.title = tip.join("\n");
+    if (host) host.title = withAuditNote(host, tip.join("\n"));
     chip.dataset.state = "done";
   }
 
@@ -442,7 +617,7 @@
           const host = handle.host || null;
           chip.textContent = "未评估";
           chip.title = resp.error.message || "";
-          if (host) host.title = resp.error.message || "";
+          if (host) host.title = withAuditNote(host, resp.error.message || "");
           chip.dataset.state = "error";
         }
       }
@@ -491,6 +666,11 @@
   function observe() {
     const root = document.querySelector(S.engine.container) || document.body;
     if (!root) return;
+    // 窗口尺寸变化会让 overlay 漂移，重测一次（passive：不阻塞滚动合成）
+    if (!S.resizeBound) {
+      S.resizeBound = true;
+      window.addEventListener("resize", repositionOverlays, { passive: true });
+    }
     let t = 0;
     const mo = new MutationObserver(() => {
       clearTimeout(t);
@@ -506,6 +686,8 @@
           document.querySelectorAll("[data-rs-done]").forEach((n) => n.removeAttribute("data-rs-done"));
         }
         scan();
+        // 结果重排会让 overlay 漂移，对已存在的 overlay 重新测量一次
+        repositionOverlays();
       }, 400);
     });
     mo.observe(root, { childList: true, subtree: true });

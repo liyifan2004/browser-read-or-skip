@@ -283,3 +283,309 @@ describe("serp / 其他引擎", () => {
     a.equal(chips[1].dataset.marker, "dash", "可跳过档的线索应是短横");
   });
 });
+
+describe("serp / 宿主样式审计与 overlay 自愈", () => {
+  /* 祖先带 transform 的结果块：模拟 Google 深色页上命中徽章祖先的那条翻转规则。
+     jsdom 的 getComputedStyle 返回值有限，测试里对污染元素 stub 是正常做法。 */
+  const POLLUTED_HTML = `<!doctype html><html><body>
+<div id="search">
+  <div class="rs-pollute" style="transform: rotate(180deg)">
+    <div class="MjjYud">
+      <a href="https://developer.chrome.com/docs/extensions"><h3>扩展开发官方文档：Service Worker 生命周期</h3></a>
+      <div class="VwiC3b">这一条摘要的内容足够长，能通过脚本里的长度检查。</div>
+    </div>
+  </div>
+</div>
+</body></html>`;
+
+  /** stub getComputedStyle：onlyEl 命中时返回 overrides（普通对象即可，脚本按属性名读取），其余走 jsdom 默认 */
+  function stubComputedStyle(env, onlyEl, overrides) {
+    const real = env.win.getComputedStyle.bind(env.win);
+    env.win.getComputedStyle = (el, ...rest) => {
+      if (el === onlyEl) return overrides;
+      return real(el, ...rest);
+    };
+    return real;
+  }
+
+  /** 拦截 window.console.warn，供断言审计告警 */
+  function trapWarn(env) {
+    const warns = [];
+    env.win.console.warn = (...args) => warns.push(args);
+    return warns;
+  }
+
+  it("宿主祖先带 transform 时自动切 overlay：被 body 收养、绝对定位贴住标题上沿", async () => {
+    const env = bootSerp("https://www.google.com/search?q=x", POLLUTED_HTML);
+    const warns = trapWarn(env);
+    const polluted = env.doc.querySelector(".rs-pollute");
+    stubComputedStyle(env, polluted, { transform: "rotate(180deg)" });
+
+    await waitFor(() => {
+      const hosts = hostEls(env);
+      return hosts.length >= 1 && hosts[0].classList.contains("rs-serp-overlay");
+    }, { label: "徽章切换 overlay" });
+
+    const host = hostEls(env)[0];
+    a.ok(host.classList.contains("rs-serp-overlay"), "overlay 模式应追加 rs-serp-overlay 类");
+    a.equal(host.parentNode, env.doc.body, "被污染的徽章宿主应被 document.body 收养（脱离污染祖先链）");
+    a.equal(host.style.position, "absolute", "overlay 模式应为绝对定位");
+    a.equal(host.style.zIndex, "2147483640", "overlay 层级应低于浮层（2147483646）、盖过页面内容");
+
+    // 定位 = 标题矩形 + 滚动量，贴标题上沿往上 2px（jsdom 里 rect 与滚动量都是 0）
+    const anchor = env.doc.querySelector("#search a[href^='http']");
+    const rect = anchor.getBoundingClientRect();
+    const scrollX = env.win.scrollX || 0;
+    const scrollY = env.win.scrollY || 0;
+    a.equal(host.style.left, Math.round(rect.left + scrollX) + "px", "left 应按标题 rect.left + scrollX 换算");
+    a.equal(host.style.top, Math.round(rect.top + scrollY - 2) + "px", "top 应按标题 rect.top + scrollY - 2 换算");
+
+    a.ok(warns.length >= 1, "发现污染必须 console.warn 完整清单");
+    a.includes(JSON.stringify(warns), "rotate(180deg)", "告警里应带上实际污染值");
+
+    // 脱离祖先链后，评估照常写进 shadow 内的 chip
+    await waitFor(() => chipEls(env).length >= 1 && chipEls(env)[0].dataset.state === "done", { label: "徽章填上结果" });
+    a.includes(chipEls(env)[0].textContent, "值得认真读", "overlay 模式下 paintChip 必须继续生效");
+  });
+
+  it("无污染时维持文档流：宿主留在标题 <a> 内部，不告警不切 overlay", async () => {
+    const env = bootSerp("https://www.google.com/search?q=x", GOOGLE_HTML);
+    const warns = trapWarn(env);
+    stubComputedStyle(env, null, {}); // 全部走 jsdom 默认
+
+    await waitFor(() => chipEls(env).length >= 2, { label: "徽章出现" });
+    await sleep(60); // 给挂载后的审计 setTimeout 留一帧
+
+    const host = hostEls(env)[0];
+    const h3 = env.doc.querySelector("#search .MjjYud h3");
+    a.equal(host.parentNode, h3.closest("a"), "无污染的徽章必须留在行内位置（零回归）");
+    a.ok(!host.classList.contains("rs-serp-overlay"), "无污染不得切 overlay");
+    a.equal(host.dataset.rsAudit, undefined, "无污染不应写审计结论");
+    a.equal(warns.length, 0, "无污染不应 console.warn");
+  });
+
+  it("审计结论写进宿主 title，悬停可见，且评估结果回来后不被冲掉", async () => {
+    const env = bootSerp("https://www.google.com/search?q=x", POLLUTED_HTML);
+    const polluted = env.doc.querySelector(".rs-pollute");
+    stubComputedStyle(env, polluted, { transform: "rotate(180deg)" });
+
+    await waitFor(() => hostEls(env).length >= 1 && hostEls(env)[0].dataset.rsAudit, { label: "审计结论写入" });
+    const host = hostEls(env)[0];
+    a.includes(host.title, "样式被宿主页改写", "审计结论必须写进宿主 title（悬停可见）");
+    a.includes(host.title, "depth3 div.rs-pollute transform=rotate(180deg)", "结论应含深度 / 标签 / 类名 / 属性 / 实际值");
+
+    await waitFor(() => chipEls(env)[0].dataset.state === "done", { label: "徽章填上结果" });
+    a.includes(host.title, "样式被宿主页改写", "paintChip 不得冲掉审计结论");
+    a.includes(host.title, "相关度 97%", "评估 tooltip 也要在同一份 title 里");
+  });
+
+  it("MutationObserver 防抖回调与 resize 都会对已有 overlay 重新测量定位", async () => {
+    const env = bootSerp("https://www.google.com/search?q=x", POLLUTED_HTML);
+    const polluted = env.doc.querySelector(".rs-pollute");
+    stubComputedStyle(env, polluted, { transform: "rotate(180deg)" });
+
+    await waitFor(() => {
+      const hosts = hostEls(env);
+      return hosts.length >= 1 && hosts[0].classList.contains("rs-serp-overlay");
+    }, { label: "overlay 建立" });
+    const host = hostEls(env)[0];
+
+    // 模拟页面滚动 100px（jsdom 的 scrollY 是只读访问器，直接重定义）
+    Object.defineProperty(env.win, "scrollY", { value: 100, configurable: true });
+    // 触发 MutationObserver：往结果容器里塞一个节点
+    env.doc.querySelector("#search").appendChild(env.doc.createElement("div"));
+    await sleep(650); // 400ms 防抖 + 余量
+
+    a.equal(host.style.top, Math.round(0 + 100 - 2) + "px", "重排后 overlay 应按新滚动量重新定位");
+
+    // resize 事件同样触发重测
+    Object.defineProperty(env.win, "scrollY", { value: 0, configurable: true });
+    env.win.dispatchEvent(new env.win.Event("resize"));
+    await sleep(30);
+    a.equal(host.style.top, "-2px", "resize 后 overlay 应按新滚动量重新定位");
+  });
+});
+
+describe("serp / QA 第四轮固化契约（overlay 生命周期与审计边界）", () => {
+  /* 与上方「宿主样式审计与 overlay 自愈」套件同一份污染页（该常量在其 describe 作用域内） */
+  const POLLUTED_HTML = `<!doctype html><html><body>
+<div id="search">
+  <div class="rs-pollute" style="transform: rotate(180deg)">
+    <div class="MjjYud">
+      <a href="https://developer.chrome.com/docs/extensions"><h3>扩展开发官方文档：Service Worker 生命周期</h3></a>
+      <div class="VwiC3b">这一条摘要的内容足够长，能通过脚本里的长度检查。</div>
+    </div>
+  </div>
+</div>
+</body></html>`;
+
+  /**
+   * 模拟真实浏览器级联了自家防御 CSS 的计算样式：我们的 SERP_CSS 给 chip 与宿主
+   * 都写了 unicode-bidi: isolate !important（serp.js 的 :host 与 .rs-serp-chip 块）。
+   * jsdom 不会把 shadow 样式表算进 getComputedStyle，所以这里按类名 stub 出真实
+   * 浏览器会返回的值，用来守住「自家防御值不得被审计当成宿主页污染」这条边界。
+   */
+  function stubOwnDefenseStyles(env) {
+    const real = env.win.getComputedStyle.bind(env.win);
+    env.win.getComputedStyle = (el, ...rest) => {
+      const cls = el && el.classList;
+      if (cls && (cls.contains("rs-serp-chip") || cls.contains("rs-serp-host"))) {
+        return { "unicode-bidi": "isolate" };
+      }
+      return real(el, ...rest);
+    };
+  }
+
+  it("契约：自家防御值（unicode-bidi: isolate）不得被审计判为污染，无污染页不得切 overlay", async () => {
+    const env = bootSerp("https://www.google.com/search?q=x", GOOGLE_HTML);
+    const warns = [];
+    env.win.console.warn = (...args) => warns.push(args);
+    stubOwnDefenseStyles(env);
+
+    await waitFor(() => chipEls(env).length >= 1, { label: "徽章出现" });
+    await sleep(80); // 审计的 setTimeout 一帧 + 余量
+
+    const host = hostEls(env)[0];
+    a.ok(!host.classList.contains("rs-serp-overlay"),
+      "自家 :host/.rs-serp-chip 里的 unicode-bidi: isolate 是防御值，不是宿主页污染——不得据此切 overlay");
+    a.equal(host.dataset.rsAudit, undefined, "自家防御值不得写进审计结论");
+    a.equal(warns.length, 0, "自家防御值不得触发 console.warn");
+    a.equal(host.parentNode, env.doc.querySelector("#search a"), "零回归：徽章应留在行内位置");
+  });
+
+  it("契约：titleEl 失效（标题 <a> 被移除）后重测不得把 overlay 定位到 (0,-2)", async () => {
+    const env = bootSerp("https://www.google.com/search?q=x", POLLUTED_HTML);
+    const polluted = env.doc.querySelector(".rs-pollute");
+    const real = env.win.getComputedStyle.bind(env.win);
+    env.win.getComputedStyle = (el, ...rest) =>
+      el === polluted ? { transform: "rotate(180deg)" } : real(el, ...rest);
+
+    await waitFor(() => {
+      const hosts = hostEls(env);
+      return hosts.length >= 1 && hosts[0].classList.contains("rs-serp-overlay");
+    }, { label: "overlay 建立" });
+    const host = hostEls(env)[0];
+    a.equal(host.style.top, "-2px", "前置：jsdom 里初始定位为 -2px");
+
+    // 模拟翻页 / 重排后标题 <a> 从文档移除（getBoundingClientRect 将无意义）
+    env.doc.querySelector("#search a[href^='http']").remove();
+    Object.defineProperty(env.win, "scrollY", { value: 999, configurable: true });
+    env.win.dispatchEvent(new env.win.Event("resize"));
+    await sleep(50);
+
+    a.equal(host.style.top, "-2px",
+      "titleEl 已断连时 positionOverlay 必须早退：不得用全 0 矩形 + 滚动量算出 (0, 997) 把 overlay 甩到页面左上角");
+  });
+
+  it("契约：翻页（URL 变化）后旧 overlay 必须被清理，且新页徽章不产生重复 overlay", async () => {
+    const env = bootSerp("https://www.google.com/search?q=x", POLLUTED_HTML);
+    const polluted = env.doc.querySelector(".rs-pollute");
+    const real = env.win.getComputedStyle.bind(env.win);
+    env.win.getComputedStyle = (el, ...rest) =>
+      el === polluted ? { transform: "rotate(180deg)" } : real(el, ...rest);
+
+    await waitFor(() => {
+      const hosts = hostEls(env);
+      return hosts.length >= 1 && hosts[0].classList.contains("rs-serp-overlay");
+    }, { label: "overlay 建立" });
+    const oldHost = hostEls(env)[0];
+    a.equal(oldHost.parentNode, env.doc.body, "前置：旧徽章已被 body 收养为 overlay");
+
+    // 模拟搜索翻页：SPA 式改 URL + 结果容器变动（触发 MutationObserver 防抖清理）
+    env.win.history.pushState({}, "", "/search?q=page2");
+    env.doc.querySelector("#search").appendChild(env.doc.createElement("div"));
+    await sleep(700); // 400ms 防抖 + 清理 + 重扫 + 新徽章审计
+
+    a.ok(!oldHost.isConnected, "翻页后旧 overlay 必须从文档移除（overlay 挂在 body 下，清理必须是全局查询而不是容器内查询）");
+    a.equal(env.doc.querySelectorAll("body > .rs-serp-host").length, 1,
+      "新页最多一枚 overlay（同一 URL 不得重复创建 / 重复挂到 body）");
+  });
+
+  it("契约：审计基线必须等于自家防御 CSS 的计算值（防再脱节）", async () => {
+    const env = bootSerp("https://www.google.com/search?q=x", GOOGLE_HTML);
+
+    // 这张表 = 我们的防御 CSS 在真实浏览器里给 chip / host 产生的计算值。
+    // 它必须与 shadow 样式表逐项一致（下方静态断言），也必须与 serp.js 的审计基线一致：
+    // 任何一边改了另一边不同步，这条用例就红灯。
+    const OWN_COMPUTED = {
+      transform: "none", scale: "none", rotate: "none", translate: "none",
+      filter: "none", "backdrop-filter": "none",
+      "writing-mode": "horizontal-tb", direction: "ltr",
+      "text-orientation": "mixed", "unicode-bidi": "isolate"
+    };
+    const real = env.win.getComputedStyle.bind(env.win);
+    env.win.getComputedStyle = (el, ...rest) => {
+      const cls = el && el.classList;
+      if (cls && (cls.contains("rs-serp-chip") || cls.contains("rs-serp-host"))) {
+        return Object.assign({}, OWN_COMPUTED);
+      }
+      return real(el, ...rest);
+    };
+    const warns = [];
+    env.win.console.warn = (...args) => warns.push(args);
+
+    await waitFor(() => chipEls(env).length >= 2, { label: "徽章出现" });
+    await sleep(80); // 审计的 setTimeout 一帧 + 余量
+
+    // 静态契约：shadow 样式表的防御声明必须与上面这张表逐项一致
+    // （backdrop-filter / text-orientation 未防御，chip 计算值取规范初始值，不在表内）
+    const css = hostEls(env)[0].shadowRoot.querySelector("style").textContent;
+    for (const [prop, val] of Object.entries(OWN_COMPUTED)) {
+      if (prop === "backdrop-filter" || prop === "text-orientation") continue;
+      a.includes(css, prop + ": " + val + " !important",
+        "防御 CSS 应声明 " + prop + ": " + val + "（审计基线与其耦合，改一边必须同步另一边）");
+    }
+
+    const host = hostEls(env)[0];
+    a.ok(!host.classList.contains("rs-serp-overlay"), "chip / host 全部命中自家防御值时不得判为污染、不得切 overlay");
+    a.equal(warns.length, 0, "自家防御值不得触发告警");
+    a.equal(host.dataset.rsAudit, undefined, "自家防御值不得写进审计结论");
+    a.equal(host.parentNode, env.doc.querySelector("#search a"), "零回归：徽章留在行内位置");
+  });
+
+  it("契约：RTL 语言页祖先 direction=rtl 是合法排版，不得误判为污染", async () => {
+    // 模拟阿拉伯语 / 希伯来语搜索页：documentElement 与结果容器 direction=rtl，
+    // 无任何 transform 族污染——祖先链基线应随文档根方向自适应，不得切 overlay
+    const env = bootSerp("https://www.google.com/search?q=x", GOOGLE_HTML);
+    const real = env.win.getComputedStyle.bind(env.win);
+    env.win.getComputedStyle = (el, ...rest) => {
+      if (el === env.doc.documentElement) return { direction: "rtl" };
+      if (el && el.classList && el.classList.contains("MjjYud")) return { direction: "rtl" };
+      return real(el, ...rest);
+    };
+    const warns = [];
+    env.win.console.warn = (...args) => warns.push(args);
+
+    await waitFor(() => chipEls(env).length >= 2, { label: "徽章出现" });
+    await sleep(80); // 审计一帧 + 余量
+
+    const host = hostEls(env)[0];
+    a.ok(!host.classList.contains("rs-serp-overlay"), "RTL 页祖先 direction=rtl 不得触发 overlay");
+    a.equal(host.dataset.rsAudit, undefined, "RTL 合法排版不得写进审计结论");
+    a.equal(warns.length, 0, "RTL 合法排版不得告警");
+    a.equal(host.parentNode, env.doc.querySelector("#search a"), "RTL 页徽章留在行内位置");
+  });
+
+  it("契约：审计只在徽章插入时跑一次，重扫与 resize 不重复触发审计（性能边界）", async () => {
+    const env = bootSerp("https://www.google.com/search?q=x", GOOGLE_HTML);
+    let gcsCalls = 0;
+    const real = env.win.getComputedStyle.bind(env.win);
+    env.win.getComputedStyle = (el, ...rest) => {
+      gcsCalls++;
+      return real(el, ...rest);
+    };
+
+    await waitFor(() => chipEls(env).length >= 2, { label: "徽章出现" });
+    await sleep(80); // 等两枚徽章的审计各跑一帧
+    const afterAudit = gcsCalls;
+    a.ok(afterAudit > 0, "前置：插入阶段确实执行了审计");
+
+    // 重扫（防抖回调）与 resize 只做重定位（getBoundingClientRect），不得再跑审计
+    env.doc.querySelector("#search").appendChild(env.doc.createElement("div"));
+    await sleep(650);
+    env.win.dispatchEvent(new env.win.Event("resize"));
+    await sleep(50);
+
+    a.equal(gcsCalls, afterAudit, "审计只发生在插入时：MutationObserver 重扫与 resize 不得反复读取祖先链计算样式");
+  });
+});
