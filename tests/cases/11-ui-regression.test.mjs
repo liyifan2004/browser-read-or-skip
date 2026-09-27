@@ -29,6 +29,7 @@ function extractTemplate(src, name) {
 
 const HUD_CSS = extractTemplate(HUD_SRC, "CSS");
 const SERP_CSS = extractTemplate(SERP_SRC, "SERP_CSS");
+const SUMMARY_CSS = extractTemplate(SERP_SRC, "SUMMARY_CSS");
 
 const PAGES = [
   ["popup.css", POPUP_CSS],
@@ -171,8 +172,9 @@ describe("UI 回归 / SERP 徽章对比度", () => {
       }
     }
     for (const mode of ["light", "dark"]) {
-      a.includes(SERP_CSS, "RS.SERP_THEME.summary." + mode + ".fg", "汇总条 " + mode + " 正文色未接入样式");
-      a.includes(SERP_CSS, "RS.SERP_THEME.summary." + mode + ".brand", "汇总条 " + mode + " 品牌色未接入样式");
+      // 汇总条颜色走页面级 SUMMARY_CSS（light DOM），徽章颜色走 shadow 内的 SERP_CSS
+      a.includes(SUMMARY_CSS, "RS.SERP_THEME.summary." + mode + ".fg", "汇总条 " + mode + " 正文色未接入样式");
+      a.includes(SUMMARY_CSS, "RS.SERP_THEME.summary." + mode + ".brand", "汇总条 " + mode + " 品牌色未接入样式");
     }
   });
 
@@ -293,7 +295,11 @@ describe("UI 回归 / QA 复核固化的契约", () => {
       return el;
     };
     loadContentScript(env, 1);
-    await waitFor(() => env.doc.querySelectorAll(".rs-serp-chip").length >= 1, { label: "徽章出现" });
+    // 徽章本体在 shadow root 里：经由宿主元素等待
+    await waitFor(() => {
+      const hosts = env.doc.querySelectorAll(".rs-serp-host");
+      return hosts.length >= 1 && hosts[0].shadowRoot && hosts[0].shadowRoot.querySelector(".rs-serp-chip");
+    }, { label: "徽章出现" });
 
     const styleIdx = order.findIndex((el) => el.tagName === "STYLE");
     const chipIdx = order.findIndex((el) => el.tagName === "SPAN" && String(el.className).includes("rs-serp-chip"));
@@ -303,18 +309,24 @@ describe("UI 回归 / QA 复核固化的契约", () => {
     a.ok(env.doc.getElementById("rs-serp-style"), "样式节点应已挂到文档上");
   });
 
-  it("徽章与汇总条的主题类名必须带 rs- 前缀，不得出现裸 lt / dk（Google 深色页 180° 翻转回归防线）", async () => {
+  it("徽章与汇总条的主题类名必须带 rs- 前缀，不得出现裸 lt / dk；徽章防御含 transform 族独立属性（180° 翻转回归防线）", async () => {
     const env = createEnv({
       url: "https://www.google.com/search?q=qa",
       html: SERP_FIXTURE,
       chromeOpts: { onRuntimeSendMessage: () => Promise.resolve({ ok: true, results: {} }) }
     });
     loadContentScript(env, 1);
-    await waitFor(() => env.doc.querySelectorAll(".rs-serp-chip").length >= 1, { label: "徽章出现" });
+    // 徽章本体在 shadow root 里，light DOM 只有 .rs-serp-host 宿主
+    await waitFor(() => {
+      const hosts = env.doc.querySelectorAll(".rs-serp-host");
+      return hosts.length >= 1 && [...hosts].every((h) => h.shadowRoot && h.shadowRoot.querySelector(".rs-serp-chip"));
+    }, { label: "徽章出现" });
     await waitFor(() => env.doc.getElementById("rs-serp-summary"), { label: "汇总条出现" });
 
-    const targets = [...env.doc.querySelectorAll(".rs-serp-chip"), env.doc.getElementById("rs-serp-summary")];
+    const chips = [...env.doc.querySelectorAll(".rs-serp-host")].map((h) => h.shadowRoot.querySelector(".rs-serp-chip"));
+    const targets = [...chips, env.doc.getElementById("rs-serp-summary")];
     a.ok(targets.length >= 3, "徽章与汇总条都应存在");
+    a.equal(env.doc.querySelectorAll(".rs-serp-chip").length, 0, "徽章不应出现在 light DOM（shadow DOM 隔离契约）");
     for (const el of targets) {
       a.ok(
         el.classList.contains("rs-lt") || el.classList.contains("rs-dk"),
@@ -326,11 +338,19 @@ describe("UI 回归 / QA 复核固化的契约", () => {
     }
 
     // 注入样式里的主题选择器也必须全部走 rs- 前缀
-    const css = env.doc.getElementById("rs-serp-style").textContent;
-    a.ok(!/(^|[,\s])\.lt[\s.{:]/m.test(css), "注入样式里不得出现裸 .lt 选择器");
-    a.ok(!/(^|[,\s])\.dk[\s.{:]/m.test(css), "注入样式里不得出现裸 .dk 选择器");
-    a.includes(css, "transform: none !important", "徽章须自带 transform 防御");
-    a.includes(css, "unicode-bidi: isolate !important", "徽章须自带 unicode-bidi 防御");
+    const pageCss = env.doc.getElementById("rs-serp-style").textContent;
+    a.ok(!/(^|[,\s])\.lt[\s.{:]/m.test(pageCss), "页面级样式里不得出现裸 .lt 选择器");
+    a.ok(!/(^|[,\s])\.dk[\s.{:]/m.test(pageCss), "页面级样式里不得出现裸 .dk 选择器");
+    a.ok(!pageCss.includes(".rs-serp-chip"), "页面级样式不得残留徽章选择器（徽章规则只在 shadow 内）");
+    // 徽章防御走 SERP_CSS（shadow 内嵌样式）：transform: none 压不住
+    // CSS Transforms L2 的独立属性 scale/rotate/translate，必须一并否定
+    a.includes(SERP_CSS, "transform: none !important", "徽章须自带 transform 防御");
+    a.includes(SERP_CSS, "scale: none !important", "徽章须自带 scale 防御（独立属性，上一轮盲区）");
+    a.includes(SERP_CSS, "rotate: none !important", "徽章须自带 rotate 防御");
+    a.includes(SERP_CSS, "translate: none !important", "徽章须自带 translate 防御");
+    a.includes(SERP_CSS, "filter: none !important", "徽章须自带 filter 防御（invert 也会翻转视觉）");
+    a.includes(SERP_CSS, "unicode-bidi: isolate !important", "徽章须自带 unicode-bidi 防御");
+    a.includes(SERP_CSS, "all: initial", ":host 必须 all: initial 起手，切断宿主页继承");
   });
 
   it("命中区用伪元素扩到 44px，弹窗与设置页有 pointer: coarse 触屏放大", () => {

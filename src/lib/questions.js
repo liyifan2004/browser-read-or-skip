@@ -135,13 +135,19 @@
         type: "choice",
         instructions:
           "The reader typed a search query (state.query) and is looking at this single result " +
-          "(title, url, snippet only). Decide whether this result is worth clicking for THIS query: " +
-          "does it likely contain what the query is asking for? The reader\u2019s focus topics " +
-          "(" + topics + ") are only a secondary preference.",
+          "(title, url, snippet only). IMPORTANT: results on a search page are BY DEFINITION " +
+          "topically related to the query (otherwise they would not be listed), so do NOT let " +
+          "topical relevance alone drive a read verdict — that makes every result read. " +
+          "READ is reserved for results whose snippet shows substantive BODY content " +
+          "(encyclopedia entry, documentation, in-depth article, research, tutorial) that can " +
+          "substantively answer this query and is worth reading paragraph by paragraph. " +
+          "Official homepages, navigation pages, social profile pages, job boards, list/tag " +
+          "pages and archive pages are at most SKIM even when they are the top hit. " +
+          "The reader\u2019s focus topics (" + topics + ") are only a secondary preference.",
         criteria: {
-          read: "值得点开看：很可能直接命中这次查询想要的东西",
-          skim: "可能有用：需要点进去再挑，或只覆盖部分查询意图",
-          skip: "与查询无关，或明显营销 / 低质结果"
+          read: "值得逐段读：snippet 显示这是正文型内容（词条 / 文档 / 深度文章 / 研究 / 教程），能实质回答这次查询",
+          skim: "点进去扫一眼就够：与查询相关但不是正文型——官方主页 / 导航页 / 社交资料页 / 招聘页 / 列表页 / 档案页，或只覆盖部分查询意图",
+          skip: "与查询无关，或明显营销 / 低质 / 内容农场"
         }
       },
       relevance: {

@@ -146,11 +146,13 @@
 .warn .fix { color: var(--rs-warn); text-decoration: underline; cursor: pointer; }
 .warn.err .fix { color: var(--rs-danger); }
 
-/* 指标：数值条一律 accent 色相，不按高低换色 */
+/* 指标：数值条一律 accent 色相，不按高低换色。
+   track 6px：太细（2px）在真实渲染里像分隔线，21% 和 92% 根本分不出来；
+   顶部综合分刻度 .scale 保持 2px——那是刻度线不是进度条。 */
 .metrics { padding: 12px 16px 4px; display: flex; flex-direction: column; gap: 8px; }
 .metric { display: grid; grid-template-columns: 72px 1fr 44px; align-items: center; gap: 8px; }
 .mlabel { font-size: 12px; color: var(--rs-text-2); white-space: nowrap; }
-.track { height: 2px; border-radius: 999px; background: var(--rs-border); overflow: hidden; }
+.track { height: 6px; border-radius: 999px; background: var(--rs-border); overflow: hidden; }
 .fill { height: 100%; border-radius: 999px; width: 0; background: var(--rs-accent);
   transition: width .55s cubic-bezier(.2,.8,.25,1); }
 .fill.skeleton { background: var(--rs-border); width: 100% !important; }

@@ -46,6 +46,32 @@ const domainOf = (u) => {
 
 const CASES = [
   {
+    name: "人物导航型：Elon Musk（用户截图同款场景）",
+    query: "Elon Musk",
+    items: [
+      {
+        url: "https://en.wikipedia.org/wiki/Elon_Musk",
+        title: "Elon Musk - Wikipedia",
+        snippet: "Elon Reeve Musk is a businessman known for his key roles in Tesla, SpaceX and X (formerly Twitter). This article covers his early life, career, acquisitions and controversies."
+      },
+      {
+        url: "https://www.tesla.com",
+        title: "Tesla: Electric Cars, Solar Panels & Clean Energy",
+        snippet: "Tesla is accelerating the world's transition to sustainable energy. Explore our electric cars, solar panels and energy storage products."
+      },
+      {
+        url: "https://x.com/elonmusk",
+        title: "Elon Musk (@elonmusk) / X",
+        snippet: "Elon Musk on X: latest posts and replies from @elonmusk."
+      },
+      {
+        url: "https://www.instagram.com/elonmusk/",
+        title: "Elon Musk (@elonmusk) • Instagram photos and videos",
+        snippet: "See Instagram photos and videos from Elon Musk (@elonmusk)."
+      }
+    ]
+  },
+  {
     name: "导航型：字节",
     query: "字节",
     items: [

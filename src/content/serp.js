@@ -5,9 +5,17 @@
  * 并在结果列表顶部插入一行汇总条。
  * 副产品：评估结果会写入按 URL 索引的缓存，点进结果页时浮层可以瞬时给出结论。
  *
- * 样式策略：所有徽章 / 汇总条样式集中在一次注入的 <style id="rs-serp-style"> 里，
- * 用 data-v（等级）与 rs-lt / rs-dk（明暗主题）两个属性驱动，宿主页样式不影响它们。
- * 明暗主题按结果容器背景的相对亮度选择（> 0.5 视为浅色页）。
+ * 样式策略（两层）：
+ * 1. 徽章渲染在自己的 Shadow DOM 里（hud.js 同款方案）：
+ *    宿主 <span class="rs-serp-host"> 放在标题 <a> 内部、<h3> 之前（与标题同一行），
+ *    徽章本体在宿主的 shadow root 中。页面 CSS 无法选中 shadow root 内部的元素，
+ *    宿主页任何规则（包括 CSS Transforms Level 2 的独立属性 scale / rotate / translate
+ *    —— transform: none 压不住它们，是上一轮翻转修复失败的根因）都打不到徽章，
+ *    属于结构性根除，不再依赖猜测对方用了什么属性。
+ * 2. 汇总条 #rs-serp-summary 留在 light DOM，样式集中在一次注入的
+ *    <style id="rs-serp-style"> 里（只含汇总条规则，不含徽章选择器）。
+ * 明暗主题按结果容器背景的相对亮度选择（> 0.5 视为浅色页），
+ * shadow 内用 :host { all: initial } 起手后把徽章样式全部显式重设。
  * 每档等级除颜色外还有非颜色线索：实心点（read）/ 空心底（skim）/ 短横（skip）。
  */
 (function (RS) {
@@ -16,6 +24,7 @@
   window.__RS_SERP_LOADED__ = true;
 
   const CHIP_CLASS = "rs-serp-chip";
+  const HOST_CLASS = "rs-serp-host";
   /* 主题类名必须带 rs- 前缀：裸的 lt / dk 太通用，Google 等站的压缩 CSS 里
      很可能有同名规则，会把宿主页样式直接泼到我们的徽章上。 */
   const THEME_LIGHT = "rs-lt";
@@ -79,18 +88,34 @@
     }
   ];
 
-  /* 所有颜色对都来自 constants.js 的 RS.SERP_THEME（测试会用 WCAG 公式复算 ≥ 4.5:1）。 */
+  /* 徽章样式：注入每个宿主的 shadow root。
+     :host 用 all: initial 起手（hud.js 同款），把宿主页继承与样式波及全部切断，
+     再显式重设徽章所需的全部属性。
+     防御清单里除 transform 外必须包含 CSS Transforms Level 2 的三个独立属性
+     scale / rotate / translate——transform: none 对它们无效，这是上一轮
+     「徽章 180° 翻转」修复失败的盲区；filter 一并防御（invert 也会造成视觉翻转）。 */
   const SERP_CSS = `
+:host {
+  all: initial;
+  display: inline-block;
+  cursor: help;
+  /* 宿主元素自己也可能被 a > span 这类规则命中，防御写在 :host 上 */
+  transform: none !important; scale: none !important; rotate: none !important;
+  translate: none !important; filter: none !important;
+  direction: ltr !important; unicode-bidi: isolate !important;
+  writing-mode: horizontal-tb !important;
+}
 .${CHIP_CLASS} {
   display: inline-flex; align-items: center; gap: 5px;
   font: 600 12px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
   padding: 1px 7px; margin-right: 7px; border-radius: 4px;
   vertical-align: middle; white-space: nowrap; letter-spacing: .2px;
-  position: relative; top: -1px; cursor: help; border: 1px solid transparent;
-  /* 防御宿主页规则波及徽章排版：翻转 / 竖排 / RTL 一律就地否定（!important 只
-     用于这几个防御项， scoped 到本徽章类，不影响宿主页任何元素）。 */
-  transform: none !important; direction: ltr !important;
-  unicode-bidi: isolate !important; writing-mode: horizontal-tb !important;
+  position: relative; top: -1px; border: 1px solid transparent;
+  /* shadow 内本已隔离，此处是双保险：翻转 / 竖排 / RTL / 滤镜一律就地否定 */
+  transform: none !important; scale: none !important; rotate: none !important;
+  translate: none !important; filter: none !important;
+  direction: ltr !important; unicode-bidi: isolate !important;
+  writing-mode: horizontal-tb !important;
 }
 .${CHIP_CLASS}::before { content: ""; display: inline-block; flex: none; }
 .${CHIP_CLASS}[data-marker="dot-solid"]::before { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
@@ -106,6 +131,11 @@
 .${CHIP_CLASS}.${THEME_DARK}[data-v="skim"]    { color: ${RS.SERP_THEME.dark.skim.fg};    background: ${RS.SERP_THEME.dark.skim.bg}; }
 .${CHIP_CLASS}.${THEME_DARK}[data-v="skip"]    { color: ${RS.SERP_THEME.dark.skip.fg};    background: ${RS.SERP_THEME.dark.skip.bg}; }
 .${CHIP_CLASS}.${THEME_DARK}[data-v="pending"] { color: ${RS.SERP_THEME.dark.pending.fg}; background: ${RS.SERP_THEME.dark.pending.bg}; }
+`;
+
+  /* 汇总条样式：留在 light DOM，随页面级 <style id="rs-serp-style"> 注入。
+     这里不允许残留任何徽章选择器——徽章规则只存在于 shadow 内部。 */
+  const SUMMARY_CSS = `
 #rs-serp-summary {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   margin: 8px 0 12px; padding: 8px 12px; border-radius: 8px;
@@ -125,7 +155,7 @@
     engine: null,
     lightTheme: true,
     items: new Map(),   // url → item
-    chips: new Map(),   // url → [elements]
+    chips: new Map(),   // url → [{ host, chip }]（host 是 light DOM 宿主，chip 在其 shadow root 里）
     done: false,
     summaryEl: null
   };
@@ -152,12 +182,12 @@
     observe();
   }
 
-  /** 样式只注入一次；等级颜色随 data-v 与 rs-lt/rs-dk 类切换 */
+  /** 汇总条样式只注入一次；徽章样式随各自的 shadow root 注入 */
   function ensureStyle() {
     if (document.getElementById(STYLE_ID)) return;
     const st = document.createElement("style");
     st.id = STYLE_ID;
-    st.textContent = SERP_CSS;
+    st.textContent = SUMMARY_CSS;
     (document.head || document.documentElement).appendChild(st);
   }
 
@@ -296,43 +326,89 @@
     }
   }
 
+  /**
+   * 徽章渲染成 Shadow DOM：
+   * - 宿主 <span class="rs-serp-host"> 放回标题 <a> 内部、<h3> 之前（与标题同一行，
+   *   解决徽章位置偏上的问题）；
+   * - 徽章本体在宿主的 shadow root 里，页面 CSS 选不到它——宿主页任何规则
+   *   （不管是不是 transform 类）都无法命中，结构性根除翻转问题；
+   * - S.chips 存 { host, chip } 句柄，paintChip 只操作 shadow 内部的 chip。
+   */
   function placeChip(item) {
     const target = anchorNodeFor(item.node);
     if (!target || !target.parentNode) return;
-    const chip = document.createElement("span");
-    chip.className = CHIP_CLASS + " " + (S.lightTheme ? THEME_LIGHT : THEME_DARK);
-    chip.dataset.state = "pending";
-    chip.dataset.v = "pending";
-    chip.dataset.marker = themeFor("pending").marker;
-    chip.textContent = "…";
-    // 插到标题链接之前且与它同级：徽章彻底脱离 <a> 内部，
-    // 宿主页针对链接内部（a > h3 / a > span）的规则不再命中徽章。
     const anchor = target.closest ? target.closest("a") : null;
-    const host = anchor || target;
+    const mountPoint = anchor || target;
+    if (!mountPoint.parentNode) return;
+
+    const host = document.createElement("span");
+    host.className = HOST_CLASS;
+    let chip = null;
     try {
-      host.parentNode.insertBefore(chip, host);
+      const shadow = host.attachShadow({ mode: "open" });
+      const style = document.createElement("style");
+      style.textContent = SERP_CSS;
+      chip = document.createElement("span");
+      chip.className = CHIP_CLASS + " " + (S.lightTheme ? THEME_LIGHT : THEME_DARK);
+      chip.dataset.state = "pending";
+      chip.dataset.v = "pending";
+      chip.dataset.marker = themeFor("pending").marker;
+      chip.textContent = "…";
+      shadow.append(style, chip);
+      // 行内位置：<a> 内部、第一个子元素（<h3>）之前
+      mountPoint.insertBefore(host, mountPoint.firstChild);
     } catch (e) {
       return;
     }
     if (!S.chips.has(item.url)) S.chips.set(item.url, []);
-    S.chips.get(item.url).push(chip);
+    S.chips.get(item.url).push({ host, chip });
+    diagnoseHost(host);
   }
 
-  function paintChip(el, result) {
+  /**
+   * 诊断：万一用户那边徽章仍被宿主页样式改写（如翻转），这条日志能一击定位。
+   * 渲染后读取宿主（light DOM，页面样式可直接命中它）的计算样式，
+   * 任何 transform 族 / filter 属性非默认值即告警。
+   */
+  function diagnoseHost(host) {
+    setTimeout(() => {
+      try {
+        const cs = window.getComputedStyle(host);
+        const bad = {};
+        for (const p of ["transform", "scale", "rotate", "translate", "filter"]) {
+          const val = cs[p];
+          if (val && val !== "none") bad[p] = val;
+        }
+        if (Object.keys(bad).length) {
+          console.warn(
+            "[Read or Skip] 徽章宿主被宿主页样式改写",
+            Object.assign({ class: host.className, expected: "shadow DOM 隔离下不应命中宿主样式" }, bad)
+          );
+        }
+      } catch (e) {}
+    }, 0);
+  }
+
+  /** paintChip 只碰 shadow 内部的 chip；提示同时写在 chip 与宿主上（悬停宿主也能看到） */
+  function paintChip(handle, result) {
+    const chip = handle && handle.chip ? handle.chip : handle;
+    const host = handle && handle.host ? handle.host : null;
+    if (!chip) return;
     const v = RS.VERDICT[result.verdict] || RS.VERDICT.unknown;
     const known = ["read", "skim", "skip", "pending"].indexOf(result.verdict) !== -1;
     const theme = themeFor(known ? result.verdict : "pending");
     const cred = typeof result.credibility === "number" ? " · " + result.credibility + "%" : "";
-    el.textContent = v.label + cred;
-    el.dataset.v = known ? result.verdict : "pending";
-    el.dataset.marker = theme.marker;
+    chip.textContent = v.label + cred;
+    chip.dataset.v = known ? result.verdict : "pending";
+    chip.dataset.marker = theme.marker;
     const tip = [];
     tip.push(v.label);
     if (typeof result.relevance === "number") tip.push("与查询意图相关度 " + result.relevance + "%");
     if (typeof result.credibility === "number") tip.push("信息可信度 " + result.credibility + "%");
     if (result.warning === "intent") tip.push("⚠️ 可能名不副实 / 商业页");
-    el.title = tip.join("\n");
-    el.dataset.state = "done";
+    chip.title = tip.join("\n");
+    if (host) host.title = tip.join("\n");
+    chip.dataset.state = "done";
   }
 
   async function evaluate(items) {
@@ -357,13 +433,16 @@
       const r = results[item.url] || results[item.rawHref];
       if (!r) continue;
       item.result = r;
-      for (const chip of S.chips.get(item.url) || []) paintChip(chip, r);
+      for (const handle of S.chips.get(item.url) || []) paintChip(handle, r);
     }
     if (!resp.ok && resp.error && !Object.keys(results).length) {
       for (const item of items) {
-        for (const chip of S.chips.get(item.url) || []) {
+        for (const handle of S.chips.get(item.url) || []) {
+          const chip = handle.chip || handle;
+          const host = handle.host || null;
           chip.textContent = "未评估";
           chip.title = resp.error.message || "";
+          if (host) host.title = resp.error.message || "";
           chip.dataset.state = "error";
         }
       }
@@ -422,7 +501,8 @@
           S.chips.clear();
           S.summaryEl = null;
           document.querySelectorAll("#" + "rs-serp-summary").forEach((n) => n.remove());
-          document.querySelectorAll("." + CHIP_CLASS).forEach((n) => n.remove());
+          // 徽章本体在 shadow root 里，light DOM 只清宿主元素即可整体移除
+          document.querySelectorAll("." + HOST_CLASS).forEach((n) => n.remove());
           document.querySelectorAll("[data-rs-done]").forEach((n) => n.removeAttribute("data-rs-done"));
         }
         scan();

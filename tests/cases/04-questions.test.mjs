@@ -146,13 +146,17 @@ describe("questions / 搜索结果问题定义", () => {
     a.notIncludes(JSON.stringify(q.relevance.criteria), "关注主题");
   });
 
-  it("verdict 语义是「值得点开看」，不再要求细读，且仍须拦营销页", () => {
+  it("verdict 语义收紧：read 只留给正文型内容，官网 / 资料页最多 skim，并明说主题相关不驱动 read", () => {
     const env = boot();
     const q = env.win.RS.questions.serpQuestions(SETTINGS);
-    a.notIncludes(JSON.stringify(q.verdict.criteria), "细读");
-    a.includes(q.verdict.criteria.read, "点开看");
-    a.includes(q.verdict.criteria.read, "命中");
-    a.includes(JSON.stringify(q.verdict.criteria.skip), "营销");
+    a.includes(q.verdict.criteria.read, "正文型", "read 门槛应是「正文型内容」");
+    a.includes(q.verdict.criteria.read, "逐段读");
+    a.includes(q.verdict.criteria.skim, "官方主页", "skim 应覆盖官网 / 资料页这类导航形态");
+    a.includes(q.verdict.criteria.skim, "社交资料页");
+    a.includes(q.verdict.criteria.skip, "营销");
+    a.includes(q.verdict.instructions, "topical relevance", "instructions 必须明说：主题相关本身不驱动 read");
+    a.includes(q.verdict.instructions, "snippet");
+    a.notIncludes(q.verdict.criteria.read, "点开看", "旧的「点开看」宽门槛应已移除（校准过正回归防线）");
   });
 });
 
