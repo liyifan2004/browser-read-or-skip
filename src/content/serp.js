@@ -7,17 +7,17 @@
  *
  * 样式策略（三层）：
  * 1. 徽章渲染在自己的 Shadow DOM 里（hud.js 同款方案）：
- *    宿主 <span class="rs-serp-host"> 放在标题 <a> 内部、<h3> 之前（与标题同一行），
- *    徽章本体在宿主的 shadow root 中。页面 CSS 无法选中 shadow root 内部的元素。
+ *    宿主 <span class="rs-serp-host"> 插在标题元素（如 <h3>）内部作为第一个子节点
+ *    （与标题文字同一行，嵌入页面布局），徽章本体在宿主的 shadow root 中。
+ *    页面 CSS 无法选中 shadow root 内部的元素。
  * 2. 汇总条 #rs-serp-summary 留在 light DOM，样式集中在一次注入的
  *    <style id="rs-serp-style"> 里（只含汇总条规则，不含徽章选择器）。
- * 3. 最后一道保险：徽章挂载后沿宿主祖先链审计计算样式（transform 族 / 排版属性）。
- *    三轮样式隔离（改类名 / 移出 <a> / Shadow DOM）都没修掉 Google 深色页上的
- *    徽章翻转，说明宿主页有条带 !important 的规则命中了宿主或祖先——按 CSS Scoping
- *    规范，外层文档的 !important 声明胜过 shadow host 的声明，:host 里的防御天生
- *    打不赢，所以不能在样式层面硬压，改走「审计取证 + 物理脱离」：一旦发现污染，
- *    该徽章的宿主被 document.body 收养（浮层挂在 body 上三年不出问题），切为
- *    overlay 模式（position:absolute + 标题矩形定位），审计结论写进宿主 title。
+ * 3. 宿主不生成盒子：:host 用 display: contents——页面规则就算命中宿主并设置
+ *    transform / scale / rotate / translate / filter，也没有可变换的盒子，无从作用。
+ *    这比「防御属性」更彻底：宿主对外部样式的几何污染整体免疫。
+ * 4. 最后一道取证：徽章挂载后沿宿主祖先链审计计算样式（transform 族 / 排版属性），
+ *    发现污染只取证（结论写进宿主 title + console.warn），不改变布局——
+ *    万一将来还有页面能翻转徽章，悬停徽章即可看到审计结论定位凶手。
  * 明暗主题按结果容器背景的相对亮度选择（> 0.5 视为浅色页），
  * shadow 内用 :host { all: initial } 起手后把徽章样式全部显式重设。
  * 每档等级除颜色外还有非颜色线索：实心点（read）/ 空心底（skim）/ 短横（skip）。
@@ -99,24 +99,21 @@
      scale / rotate / translate——transform: none 对它们无效，这是上一轮
      「徽章 180° 翻转」修复失败的盲区；filter 一并防御（invert 也会造成视觉翻转）。
      注意：外层文档带 !important 的规则在 shadow host 上仍然打赢 :host 里的
-     !important（CSS Scoping 规范），所以这些防御只是第一层，真正的兜底是
-     挂载后的样式审计 + 污染自动切换 overlay（见 diagnoseHost）。 */
+     !important（CSS Scoping 规范），所以真正的免疫来自 display: contents——
+     宿主不生成盒子，外部 transform 类规则没有可作用的对象；样式审计（见
+     diagnoseHost）只负责取证，不再切换布局。 */
   const SERP_CSS = `
 :host {
   all: initial;
-  display: inline-block;
+  /* 宿主不生成盒子：页面规则命中宿主的 transform / scale / rotate / translate /
+     filter 全部失效（没有可变换的东西），徽章作为标题行内内容的一部分渲染 */
+  display: contents !important;
   cursor: help;
   /* 宿主元素自己也可能被 a > span 这类规则命中，防御写在 :host 上 */
   transform: none !important; scale: none !important; rotate: none !important;
   translate: none !important; filter: none !important;
   direction: ltr !important; unicode-bidi: isolate !important;
   writing-mode: horizontal-tb !important;
-}
-:host(.rs-serp-overlay) {
-  /* overlay 模式：宿主已被收养到 body，这里只做定位兜底（left/top 由内联样式给出） */
-  position: absolute !important;
-  z-index: 2147483640 !important;
-  margin: 0 !important;
 }
 .${CHIP_CLASS} {
   display: inline-flex; align-items: center; gap: 5px;
@@ -161,6 +158,14 @@
 #rs-serp-summary.${THEME_DARK} .rs-brand { color: ${RS.SERP_THEME.summary.dark.brand}; }
 #rs-serp-summary .rs-sep { opacity: .35; }
 #rs-serp-summary .rs-dim { opacity: .65; }
+/* 徽章宿主留在标题行内、不生成盒子。双类提高特异性，压过 a > span 这类元素
+   选择器：页面规则就算命中宿主，也没有盒子可变换（display:contents），
+   兜底否定四个变换属性。这类规则操作 light DOM 里的宿主本身，只能放这里。 */
+.rs-serp-host.rs-serp-host {
+  display: contents !important;
+  transform: none !important; scale: none !important; rotate: none !important;
+  translate: none !important; filter: none !important;
+}
 `;
 
   const S = {
@@ -168,10 +173,9 @@
     engine: null,
     lightTheme: true,
     items: new Map(),   // url → item
-    chips: new Map(),   // url → [{ host, chip, titleEl }]（host 是 light DOM 宿主，chip 在其 shadow root 里，titleEl 用于 overlay 定位）
+    chips: new Map(),   // url → [{ host, chip }]（host 是 light DOM 宿主，chip 在其 shadow root 里）
     done: false,
-    summaryEl: null,
-    resizeBound: false  // resize 重测监听只绑一次
+    summaryEl: null
   };
 
   init().catch(() => {});
@@ -342,20 +346,17 @@
 
   /**
    * 徽章渲染成 Shadow DOM：
-   * - 宿主 <span class="rs-serp-host"> 放回标题 <a> 内部、<h3> 之前（与标题同一行，
-   *   解决徽章位置偏上的问题）；
-   * - 徽章本体在宿主的 shadow root 里，页面 CSS 选不到它——宿主页任何规则
-   *   （不管是不是 transform 类）都无法命中，结构性根除翻转问题；
-   * - S.chips 存 { host, chip, titleEl } 句柄，paintChip 只操作 shadow 内部的 chip，
-   *   titleEl（标题挂载点）供污染自愈后的 overlay 定位使用；
-   * - 挂载后立即做宿主样式审计（diagnoseHost），发现污染自动切 overlay 模式。
+   * - 宿主 <span class="rs-serp-host"> 插进标题元素（target）内部作为第一个子节点，
+   *   与标题文字同一行——这才是「嵌入到页面里面」的样式；
+   * - 宿主 display: contents，不生成盒子：页面规则命中宿主设置的 transform /
+   *   scale / rotate / translate / filter 无从作用，宿主对几何污染整体免疫；
+   * - 徽章本体在宿主的 shadow root 里，页面 CSS 选不到它；
+   * - S.chips 存 { host, chip } 句柄，paintChip 只操作 shadow 内部的 chip；
+   * - 挂载后做一次宿主样式审计（diagnoseHost），发现污染只取证不切换。
    */
   function placeChip(item) {
     const target = anchorNodeFor(item.node);
     if (!target || !target.parentNode) return;
-    const anchor = target.closest ? target.closest("a") : null;
-    const mountPoint = anchor || target;
-    if (!mountPoint.parentNode) return;
 
     const host = document.createElement("span");
     host.className = HOST_CLASS;
@@ -371,31 +372,33 @@
       chip.dataset.marker = themeFor("pending").marker;
       chip.textContent = "…";
       shadow.append(style, chip);
-      // 行内位置：<a> 内部、第一个子元素（<h3>）之前
-      mountPoint.insertBefore(host, mountPoint.firstChild);
+      // 嵌入流：标题元素内部、第一个子节点——徽章紧跟标题文字同一行渲染
+      target.insertBefore(host, target.firstChild);
     } catch (e) {
       return;
     }
-    const handle = { host, chip, titleEl: mountPoint };
+    const handle = { host, chip };
     if (!S.chips.has(item.url)) S.chips.set(item.url, []);
     S.chips.get(item.url).push(handle);
     diagnoseHost(handle);
   }
 
-  /* ===== 宿主样式审计 + 污染自愈 =====
+  /* ===== 宿主样式审计（只取证，不切换布局） =====
      三轮样式隔离（改类名 / 移出 <a> / Shadow DOM）都没能修掉 Google 深色页上
      徽章 180° 翻转，说明宿主页有条带 !important 的规则命中了徽章的宿主或祖先——
      按 CSS Scoping 规范，外层文档的 !important 声明胜过 shadow host 的声明，
-     :host 里的防御天生打不赢。所以策略改为：先审计取证，再物理脱离。 */
+     :host 里的防御天生打不赢。几何免疫靠宿主 display: contents（没有盒子可变换）；
+     审计负责取证：一旦将来还有页面能翻转徽章，悬停即可看到结论定位凶手。
+     曾经的自动 overlay（body 收养 + 绝对定位）因盖住页面内容被用户否定，已撤销。 */
 
   /* ===== 审计基线与自家防御 CSS 的耦合（第四轮事故根因，改防御 CSS 必须同步这里） =====
      审计对象包含 shadow 内的 chip 与宿主自身，它们的计算值来自我们注入的 SERP_CSS：
      :host 与 .rs-serp-chip 都写了带 !important 的防御声明，真实浏览器里
      getComputedStyle 会返回这些防御值（如 unicode-bidi: isolate）。因此
      AUDIT_PROPS 的基线必须是「自家防御值」，而不是 CSS 规范默认值——否则每枚
-     徽章都会被自家的 isolate 判成污染、全部误切 overlay（jsdom 不级联 shadow
-     样式表所以测不出来，真实 Chrome 必现）。
-     tests/cases/07-serp.test.mjs「QA 第四轮固化契约」有逐项一致性用例兜底。 */
+     徽章都会被自家的 isolate 判成污染、全部误报（jsdom 不级联 shadow 样式表
+     所以测不出来，真实 Chrome 必现）。
+     tests/cases/07-serp.test.mjs「QA 第五轮固化契约」有逐项一致性用例兜底。 */
   const AUDIT_PROPS = {
     transform: "none",
     scale: "none",
@@ -433,9 +436,6 @@
     return cachedRootDirection;
   }
   const AUDIT_MAX_DEPTH = 16;
-  const OVERLAY_CLASS = "rs-serp-overlay";
-  /* overlay 的 z-index：低于浮层的 2147483646，仍盖过一切页面内容 */
-  const OVERLAY_Z = "2147483640";
 
   /**
    * 沿宿主祖先链审计计算样式：shadow 内的 chip、宿主自身（depth 0）、
@@ -505,48 +505,11 @@
   }
 
   /**
-   * 污染自愈：把宿主从被污染的祖先链里摘出来，挂到 document.body 上
-   * （浮层挂在 body 上三年不出问题，正是这条路径可靠性的实证），
-   * 改为绝对定位贴住标题上沿。paintChip / tooltip / data-marker 等后续
-   * 操作都只碰 shadow 内部的 chip，与宿主挂在哪里无关。
-   */
-  function promoteToOverlay(handle) {
-    const host = handle && handle.host;
-    if (!host || !host.isConnected || host.classList.contains(OVERLAY_CLASS)) return;
-    host.classList.add(OVERLAY_CLASS);
-    host.style.position = "absolute";
-    host.style.zIndex = OVERLAY_Z;
-    document.body.appendChild(host);
-    positionOverlay(handle);
-  }
-
-  /** 用标题元素的视口矩形 + 页面滚动量换算文档坐标，把宿主钉在标题上沿往上 2px */
-  function positionOverlay(handle) {
-    const host = handle && handle.host;
-    const titleEl = handle && handle.titleEl;
-    if (!host || !titleEl || !host.isConnected || !titleEl.isConnected) return;
-    if (!host.classList.contains(OVERLAY_CLASS)) return;
-    try {
-      const rect = titleEl.getBoundingClientRect();
-      const scrollX = window.scrollX || window.pageXOffset || 0;
-      const scrollY = window.scrollY || window.pageYOffset || 0;
-      host.style.left = Math.round(rect.left + scrollX) + "px";
-      host.style.top = Math.round(rect.top + scrollY - 2) + "px";
-    } catch (e) {}
-  }
-
-  /** 结果重排 / 窗口尺寸变化会让 overlay 漂移，对已存在的 overlay 重新测量 */
-  function repositionOverlays() {
-    S.chips.forEach((handles) => {
-      for (const h of handles) positionOverlay(h);
-    });
-  }
-
-  /**
-   * 徽章挂载后延迟一帧审计：沿祖先链（≤16 层）读计算样式，发现任何偏离默认值的
+   * 徽章挂载后延迟一帧审计：沿祖先链（≤16 层）读计算样式，发现任何偏离基线的
    * transform 族 / 排版属性，就把结论写进宿主 title（悬停即可看到，不需要会
-   * DevTools）并 console.warn 完整清单，同时把该徽章切到 overlay 模式
-   * （物理脱离被污染的祖先链）。未检测到污染的徽章维持文档流现状，零回归。
+   * DevTools）并 console.warn 完整清单。只取证、不切换布局：宿主 display:contents
+   * 已让外部 transform 类规则失去可作用的盒子；overlay 自动切换因盖住页面内容
+   * 被用户否定而撤销，审计结论留作将来定位污染规则的证据。
    */
   function diagnoseHost(handle) {
     const host = handle && handle.host;
@@ -558,8 +521,7 @@
         const summary = auditSummary(findings);
         host.dataset.rsAudit = summary;
         host.title = withAuditNote(host, host.title || "");
-        console.warn("[Read or Skip] " + summary + "，该徽章已自动切换为 overlay 模式", findings.slice());
-        promoteToOverlay(handle);
+        console.warn("[Read or Skip] " + summary, findings.slice());
       } catch (e) {}
     }, 0);
   }
@@ -666,11 +628,6 @@
   function observe() {
     const root = document.querySelector(S.engine.container) || document.body;
     if (!root) return;
-    // 窗口尺寸变化会让 overlay 漂移，重测一次（passive：不阻塞滚动合成）
-    if (!S.resizeBound) {
-      S.resizeBound = true;
-      window.addEventListener("resize", repositionOverlays, { passive: true });
-    }
     let t = 0;
     const mo = new MutationObserver(() => {
       clearTimeout(t);
@@ -686,8 +643,6 @@
           document.querySelectorAll("[data-rs-done]").forEach((n) => n.removeAttribute("data-rs-done"));
         }
         scan();
-        // 结果重排会让 overlay 漂移，对已存在的 overlay 重新测量一次
-        repositionOverlays();
       }, 400);
     });
     mo.observe(root, { childList: true, subtree: true });
