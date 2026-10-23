@@ -6,7 +6,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
 [![Manifest V3](https://img.shields.io/badge/Chrome-Manifest%20V3-4285F4.svg?style=flat-square)](https://developer.chrome.com/docs/extensions/develop/concepts/manifest-v3)
-[![Tests](https://img.shields.io/badge/tests-218%20cases-brightgreen?style=flat-square)](tests/)
+[![Tests](https://img.shields.io/badge/tests-268%20cases-brightgreen?style=flat-square)](tests/)
 
 浏览器扩展（Chrome / Edge，Manifest V3）。打开网页后立刻判断这个页面**值得认真读 / 快速扫 / 可以跳过**，并给出相关度、新信息程度、阅读价值、信息可信度。在搜索结果页上直接给每条结果打等级。
 
@@ -104,7 +104,7 @@ Jev 目前是早期访问（waitlist）。获取步骤：
         ├─ 唯一持有 Key、唯一发起跨域请求（绕过页面 CORS 限制）
         ├─ POST api.typesafe.ai/v1/systemone
         │    state    = { url, title, domain, 正文摘录, focusTopics, 结构统计 }
-        │    questions = 8 个并发问题（3 个 score / 3 个 choice / 2 个 noul）
+        │    questions = 8 个并发问题（4 个 score / 3 个 choice / 1 个 noul）
         ├─ 解析 answers → 归一化成 verdict + 四个百分比 + 理由
         ├─ 写缓存、记用量、画工具栏徽章
         └─ 返回 ──────────────────────────► 原地升级卡片（约 300–400ms）
@@ -147,17 +147,23 @@ tools/
   make_icons.py            生成 PNG 图标（纯标准库）
   test_jev.mjs             用真实 API 跑三个场景，验证问法与映射
   bench_latency.mjs        输入长度对延迟的影响
+  test_serp_calibrate.mjs  SERP 判定校准工具（对比问法收紧前后）
 tests/
   run.mjs                  零依赖测试运行器
   harness/                 jsdom 环境 + chrome API 模拟 + 断言库
-  cases/                   10 个套件 / 218 个用例
+  cases/                   12 个套件 / 268 个用例
+docs/
+  FEATURE_LEDGER.md        功能账簿（每项功能的实现/验证/影响面索引）
+  TECHNICAL_REFERENCES.md  官方文档与开源项目调研结论
+  IMPROVEMENTS.md          问题与优化清单（含安全审查结论）
+  CHANGELOG_DEV.md         开发记录
 ```
 
 ## 开发与自测
 
 ```bash
 npm install                  # 只装一个开发依赖 jsdom；扩展本身零依赖、无构建步骤
-npm test                     # 全部 218 个用例，约 13 秒
+npm test                     # 全部 268 个用例，约 23 秒
 npm test -- heuristics       # 只跑名字里带 heuristics 的套件
 npm test -- 并发              # 也可以按中文用例名过滤
 ```
@@ -187,6 +193,8 @@ node tools/bench_latency.mjs
 | `08-hud` | 挂载条件与每种「不弹」的原因、两阶段升级、收起/快捷键、错误提示 |
 | `09-service-worker` | 消息路由、缓存与 force、并发池上限、徽章、快捷键转发、安装流程 |
 | `10-pages` | 弹窗与设置页的表单、主题标签、保存与夹紧、连接自测 |
+| `11-ui-regression` | 设计令牌、WCAG 对比度复算、样式隔离与防御 CSS 契约、命中区 |
+| `12-popup-blocklist` | 弹窗解除屏蔽与分站点暂停恢复的边界行为 |
 
 ### 测试抓到的真实缺陷
 
