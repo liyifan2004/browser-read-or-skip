@@ -218,6 +218,38 @@ describe("serp / 其他引擎", () => {
     a.includes(chipEls(env)[0].textContent, "值得认真读");
   });
 
+  it("查询词按引擎参数名提取：百度 wd/word、搜狗 query（不是 q）", async () => {
+    const baiduHtml = `<!doctype html><html><body><div id="content_left">
+      <div class="result"><h3><a href="https://developer.chrome.com/docs/extensions">扩展开发官方文档</a></h3>
+        <div class="c-abstract">这一段摘要足够长，能通过脚本的长度检查。</div></div>
+    </div></body></html>`;
+
+    const baidu = bootSerp("https://www.baidu.com/s?wd=manifest%20v3&rsv_spt=1", baiduHtml);
+    await waitFor(() => baidu.chrome.__log.runtimeSendMessage.length >= 1, { label: "百度发出请求" });
+    const bmsg = baidu.chrome.__log.runtimeSendMessage[0];
+    a.equal(bmsg.payload.engine, "baidu");
+    a.equal(bmsg.payload.query, "manifest v3", "百度的查询词在 wd 参数里，不是 q");
+    baidu.win.close();
+
+    const sogouHtml = `<!doctype html><html><body><div id="main">
+      <div class="vrwrap"><h3><a href="https://developer.chrome.com/docs/extensions">扩展开发官方文档</a></h3>
+        <div class="str_info">这一段摘要足够长，能通过脚本的长度检查。</div></div>
+    </div></body></html>`;
+
+    const sogou = bootSerp("https://www.sogou.com/web?query=manifest+v3", sogouHtml);
+    await waitFor(() => sogou.chrome.__log.runtimeSendMessage.length >= 1, { label: "搜狗发出请求" });
+    const smsg = sogou.chrome.__log.runtimeSendMessage[0];
+    a.equal(smsg.payload.engine, "sogou");
+    a.equal(smsg.payload.query, "manifest v3", "搜狗的查询词在 query 参数里，不是 q");
+    sogou.win.close();
+
+    // 引擎声明的参数都取不到时退回空串，不瞎猜
+    const empty = bootSerp("https://www.baidu.com/s?rsv_spt=1", baiduHtml);
+    await waitFor(() => empty.chrome.__log.runtimeSendMessage.length >= 1, { label: "无查询词也发出请求" });
+    a.equal(empty.chrome.__log.runtimeSendMessage[0].payload.query, "");
+    empty.win.close();
+  });
+
   it("结果容器里一条结果都没有时安静退出，不插汇总条", async () => {
     const env = bootSerp("https://www.google.com/search?q=x", "<!doctype html><html><body><div id='search'></div></body></html>");
     await sleep(400);

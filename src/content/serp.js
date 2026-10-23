@@ -43,7 +43,8 @@
       resultSel: ["div.MjjYud", "div.g", "div[jscontroller][data-hveid]"],
       titleSel: "a h3",
       linkSel: "a[href]",
-      snippetSel: [".VwiC3b", "[data-sncf]", ".IsZvec", "div[style*='-webkit-line-clamp']"]
+      snippetSel: [".VwiC3b", "[data-sncf]", ".IsZvec", "div[style*='-webkit-line-clamp']"],
+      queryParams: ["q"]
     },
     {
       id: "bing",
@@ -52,7 +53,8 @@
       resultSel: ["li.b_algo"],
       titleSel: "h2 a",
       linkSel: "h2 a",
-      snippetSel: [".b_caption p", ".b_algoSlug", "p"]
+      snippetSel: [".b_caption p", ".b_algoSlug", "p"],
+      queryParams: ["q"]
     },
     {
       id: "baidu",
@@ -61,7 +63,9 @@
       resultSel: [".result", ".c-container"],
       titleSel: "h3 a",
       linkSel: "h3 a",
-      snippetSel: [".c-abstract", ".content-right_8Zs40", "[class*='content-right']", ".c-span-last p"]
+      snippetSel: [".c-abstract", ".content-right_8Zs40", "[class*='content-right']", ".c-span-last p"],
+      // 百度用 wd（PC）/ word（部分入口），不是 q
+      queryParams: ["wd", "word", "q"]
     },
     {
       id: "duckduckgo",
@@ -70,7 +74,8 @@
       resultSel: ["article[data-testid='result']", "div.result", "li.result"],
       titleSel: "a[data-testid='result-title-a'], h2 a",
       linkSel: "a[data-testid='result-title-a'], h2 a",
-      snippetSel: ["[data-result='snippet']", ".result__snippet"]
+      snippetSel: ["[data-result='snippet']", ".result__snippet"],
+      queryParams: ["q"]
     },
     {
       id: "brave",
@@ -79,7 +84,8 @@
       resultSel: ["div.snippet", "#results > div"],
       titleSel: ".title",
       linkSel: "a",
-      snippetSel: [".snippet-description", ".snippet-content"]
+      snippetSel: [".snippet-description", ".snippet-content"],
+      queryParams: ["q"]
     },
     {
       id: "sogou",
@@ -88,9 +94,30 @@
       resultSel: [".vrwrap", ".rb"],
       titleSel: "h3 a",
       linkSel: "h3 a",
-      snippetSel: [".str_info", ".fz-mid", ".space-txt"]
+      snippetSel: [".str_info", ".fz-mid", ".space-txt"],
+      // 搜狗用 query，不是 q
+      queryParams: ["query", "q"]
     }
   ];
+
+  /**
+   * 查询词按引擎各自的参数名提取（百度 wd/word、搜狗 query、其余 q）。
+   * 查询词是 SERP 判定的主信号（见 questions.serpQuestions），提错了整批判定就失真。
+   */
+  function currentQuery() {
+    if (!S.engine) return "";
+    let params;
+    try {
+      params = new URLSearchParams(location.search);
+    } catch (e) {
+      return "";
+    }
+    for (const key of S.engine.queryParams || ["q"]) {
+      const v = params.get(key);
+      if (v) return v;
+    }
+    return "";
+  }
 
   /* 徽章样式：注入每个宿主的 shadow root。
      :host 用 all: initial 起手（hud.js 同款），把宿主页继承与样式波及全部切断，
@@ -556,7 +583,7 @@
         type: RS.MSG.EVALUATE_SERP,
         payload: {
           engine: S.engine.id,
-          query: new URLSearchParams(location.search).get("q") || "",
+          query: currentQuery(),
           items: payloadItems
         }
       });
