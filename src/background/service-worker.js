@@ -17,7 +17,9 @@ importScripts(
   "/src/lib/constants.js",
   "/src/lib/jev.js",
   "/src/lib/storage.js",
-  "/src/lib/questions.js"
+  "/src/lib/questions.js",
+  "/src/lib/heuristics.js",
+  "/src/lib/extract.js"
 );
 
 const RS = globalThis.RS;
@@ -140,16 +142,14 @@ async function handleEvaluate(payload) {
   }
 }
 
-/** 兜底：内容脚本没带 state 时，在 SW 里用最少信息构造 */
+/**
+ * 兜底：内容脚本没带 state 时，在 SW 里构造。
+ * 必须走与内容脚本同一条 RS.extract.buildState 路径 ——
+ * 隐私模式（titles 不发正文）、截断语义只能有一处实现，
+ * 各自拼装必然出现「兜底路径绕过隐私过滤」这类缺口（详见 docs/IMPROVEMENTS.md IMP-2）。
+ */
 function extractStateFallback(page, settings) {
-  return {
-    url: page.url,
-    domain: page.domain,
-    title: page.title,
-    metaDescription: page.description || undefined,
-    focusTopics: (settings && settings.topics) || [],
-    content: (page.text || "").slice(0, (settings && settings.excerptChars) || 6000)
-  };
+  return RS.extract.buildState(page, settings);
 }
 
 /* ---------------- 搜索结果批量评估 ---------------- */
@@ -275,9 +275,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   if (type === RS.MSG.REQUEST_STATE) {
     (async () => {
-      const settings = await RS.storage.getSettings();
-      const entry = msg.url ? await RS.storage.getCacheEntry(msg.url, settings) : null;
-      sendResponse({ ok: true, entry });
+      try {
+        const settings = await RS.storage.getSettings();
+        const entry = msg.url ? await RS.storage.getCacheEntry(msg.url, settings) : null;
+        sendResponse({ ok: true, entry });
+      } catch (e) {
+        // 任何路径都必须应答：不 respond 会让发送方挂在 "port closed" 上
+        sendResponse({
+          ok: false,
+          error: { code: "STORAGE", message: String(e && e.message ? e.message : e) }
+        });
+      }
     })();
     return true;
   }

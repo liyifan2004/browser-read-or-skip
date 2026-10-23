@@ -99,17 +99,17 @@
   }
 
   /**
-   * 缓存写入串行化。
+   * 存储写入串行化（缓存与统计共用一把锁）。
    *
-   * putCacheEntry 是「读整张 map → 改一条 → 写回」，而搜索结果页是并发 5 路一起评估的：
-   * 多个协程各自读到同一份旧 map、各自写回，后写的会盖掉先写的，
-   * 结果是部分结果悄悄没进缓存 —— 点进去时"秒出结论"就时灵时不灵。
+   * putCacheEntry / bumpStats 都是「读 → 改 → 写回」，而搜索结果页是并发 5 路一起评估的：
+   * 多个协程各自读到同一份旧值、各自写回，后写的会盖掉先写的。
+   * 缓存被覆盖的结果是"秒出结论"时灵时不灵；统计被覆盖的结果是调用次数与 token 凭空变少。
    */
-  let cacheWriteChain = Promise.resolve();
+  let writeChain = Promise.resolve();
 
-  function withCacheWriteLock(fn) {
-    const run = cacheWriteChain.then(fn, fn);
-    cacheWriteChain = run.then(
+  function withStorageWriteLock(fn) {
+    const run = writeChain.then(fn, fn);
+    writeChain = run.then(
       () => undefined,
       () => undefined
     );
@@ -118,7 +118,7 @@
 
   function putCacheEntry(url, result, extra) {
     if (!result) return Promise.resolve();
-    return withCacheWriteLock(async () => {
+    return withStorageWriteLock(async () => {
       const key = urlKey(url);
       const map = await getCacheMap();
       const prev = map[key];
@@ -149,7 +149,7 @@
   }
 
   async function clearCache() {
-    await withCacheWriteLock(() => rawSet(SK.CACHE, {}));
+    await withStorageWriteLock(() => rawSet(SK.CACHE, {}));
   }
 
   async function cacheStats() {
@@ -161,25 +161,28 @@
 
   /* ---------------- 统计 ---------------- */
 
-  async function bumpStats(patch) {
-    const cur = (await rawGet(SK.STATS)) || {
-      calls: 0,
-      inputTokens: 0,
-      outputTokens: 0,
-      pages: 0,
-      verdicts: { read: 0, skim: 0, skip: 0 }
-    };
-    cur.calls = (cur.calls || 0) + (patch.calls || 0);
-    cur.inputTokens = (cur.inputTokens || 0) + (patch.inputTokens || 0);
-    cur.outputTokens = (cur.outputTokens || 0) + (patch.outputTokens || 0);
-    cur.pages = (cur.pages || 0) + (patch.pages || 0);
-    // 只统计已知判定，避免上游传进意外值把统计结构撑出无名键
-    if (patch.verdict && cur.verdicts && RS.VERDICT_ORDER.includes(patch.verdict)) {
-      cur.verdicts[patch.verdict] = (cur.verdicts[patch.verdict] || 0) + 1;
-    }
-    cur.lastAt = Date.now();
-    await rawSet(SK.STATS, cur);
-    return cur;
+  /** 与缓存写入共用同一把写锁：读-改-写在并发下不得丢更新 */
+  function bumpStats(patch) {
+    return withStorageWriteLock(async () => {
+      const cur = (await rawGet(SK.STATS)) || {
+        calls: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+        pages: 0,
+        verdicts: { read: 0, skim: 0, skip: 0 }
+      };
+      cur.calls = (cur.calls || 0) + (patch.calls || 0);
+      cur.inputTokens = (cur.inputTokens || 0) + (patch.inputTokens || 0);
+      cur.outputTokens = (cur.outputTokens || 0) + (patch.outputTokens || 0);
+      cur.pages = (cur.pages || 0) + (patch.pages || 0);
+      // 只统计已知判定，避免上游传进意外值把统计结构撑出无名键
+      if (patch.verdict && cur.verdicts && RS.VERDICT_ORDER.includes(patch.verdict)) {
+        cur.verdicts[patch.verdict] = (cur.verdicts[patch.verdict] || 0) + 1;
+      }
+      cur.lastAt = Date.now();
+      await rawSet(SK.STATS, cur);
+      return cur;
+    });
   }
 
   async function getStats() {

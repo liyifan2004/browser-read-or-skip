@@ -153,8 +153,9 @@
       images: pageData.images,
       linkDensity: Math.round(pageData.linkDensity * 100) / 100
     };
-    state.content = pageData.text.slice(0, excerptChars);
-    if (pageData.text.length > excerptChars) {
+    const text = String((pageData && pageData.text) || "");
+    state.content = text.slice(0, excerptChars);
+    if (text.length > excerptChars) {
       state.truncated = true;
     }
     return state;

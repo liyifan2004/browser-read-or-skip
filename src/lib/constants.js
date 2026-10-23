@@ -141,7 +141,7 @@
   RS.TRUST_LOW = [
     "baijiahao.baidu.com", "toutiao.com", "mini.eastday.com", "kuai.media",
     "sohu.com/a/", "163.com/dy", "qq.com/cmsid", "zhidao.baidu.com",
-    "answers.yahoo", "quora.com", "medium.com/@", "substack.com",
+    "answers.yahoo.com", "quora.com", "medium.com/@", "substack.com",
     "blog.csdn.net", "juejin.cn/post"
   ];
 

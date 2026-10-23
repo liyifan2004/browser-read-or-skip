@@ -211,6 +211,25 @@ describe("sw / 网页评估路由", () => {
     a.equal(body.state.content.length, 50, "兜底 state 也要遵守摘录上限");
   });
 
+  it("兜底 state 与内容脚本同路构造：titles 隐私模式不得把正文带出去", async () => {
+    let body = null;
+    const env = bootSw({
+      store: { "rs.settings": { apiKey: "k", privacyMode: "titles" } },
+      fetchImpl: (_url, init) => {
+        body = JSON.parse(init.body);
+        return Promise.resolve(jsonResponse(pageJev()));
+      }
+    });
+    const res = await send(env, {
+      type: env.win.RS.MSG.EVALUATE,
+      payload: { page: { url: "https://x.com/p/priv", title: "t", domain: "x.com", text: "秘密正文".repeat(100) } }
+    });
+    a.equal(res.ok, true);
+    a.equal(body.state.content, undefined, "titles 模式下兜底 state 不得携带正文");
+    a.equal(body.state.stats, undefined, "titles 模式下不得携带结构统计");
+    a.equal(body.state.url, "https://x.com/p/priv");
+  });
+
   it("没有 tab 上下文（例如设置页触发）时不会因为刷徽章而崩", async () => {
     const env = bootSw({ store: { "rs.settings": { apiKey: "k" } } });
     const res = await send(env, { type: env.win.RS.MSG.EVALUATE, payload: payload() }, {});
@@ -232,6 +251,14 @@ describe("sw / 网页评估路由", () => {
     a.equal(res.entry.result.verdict, "read");
     const none = await send(env, { type: env.win.RS.MSG.REQUEST_STATE, url: "https://x.com/nope" });
     a.equal(none.entry, null);
+  });
+
+  it("REQUEST_STATE 存储出错时必须应答 {ok:false}，不能让发送方挂在 port closed 上", async () => {
+    const env = bootSw({ store: { "rs.settings": { apiKey: "k" } } });
+    env.win.RS.storage.getCacheEntry = () => Promise.reject(new Error("storage down"));
+    const res = await send(env, { type: env.win.RS.MSG.REQUEST_STATE, url: "https://x.com/p/1" });
+    a.equal(res.ok, false);
+    a.equal(res.error.code, "STORAGE");
   });
 
   it("OPEN_OPTIONS 会打开设置页", async () => {

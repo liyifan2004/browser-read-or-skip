@@ -16,11 +16,26 @@
     }
   }
 
+  /**
+   * 名单匹配只认主机名边界（相等或子域），不做子串匹配：
+   * 子串会让 "developer.chrome.com.evil.io" 这类仿冒域蹭到白名单的 88 高可信。
+   * 带路径的名单条目（"sohu.com/a/" 等）不参与域名层匹配，
+   * 它们由 scorePage 里的 host+path 作用域匹配负责。
+   */
+  function hostMatchesList(d, list) {
+    for (const raw of list) {
+      const h = String(raw || "").toLowerCase();
+      if (!h || h.includes("/")) continue;
+      if (d === h || d.endsWith("." + h)) return true;
+    }
+    return false;
+  }
+
   function trustOfDomain(domain) {
     const d = String(domain || "").toLowerCase();
     if (!d) return 50;
-    for (const h of RS.TRUST_HIGH) if (d === h || d.endsWith("." + h) || d.includes(h)) return 88;
-    for (const h of RS.TRUST_LOW) if (d.includes(h)) return 34;
+    if (hostMatchesList(d, RS.TRUST_HIGH)) return 88;
+    if (hostMatchesList(d, RS.TRUST_LOW)) return 34;
     // 教育 / 政府域名
     if (/\.(edu|ac\.[a-z]{2}|gov)(\.[a-z]{2})?$/.test(d)) return 85;
     // 常见组织 / 博客平台

@@ -260,4 +260,19 @@ describe("storage / 用量统计", () => {
     const s = await env.win.RS.storage.getStats();
     a.deepEqual(s.verdicts, { read: 0, skim: 0, skip: 0 });
   });
+
+  it("并发 bumpStats 不丢更新（读-改-写与缓存共用写锁）", async () => {
+    const env = boot();
+    const st = env.win.RS.storage;
+    await Promise.all(
+      Array.from({ length: 8 }, (_, i) =>
+        st.bumpStats({ calls: 1, inputTokens: 10, verdict: i % 2 ? "read" : "skip" })
+      )
+    );
+    const s = await st.getStats();
+    a.equal(s.calls, 8, "8 次并发累加必须全部落盘，不能像无锁读改写那样丢更新");
+    a.equal(s.inputTokens, 80);
+    a.equal(s.verdicts.read, 4);
+    a.equal(s.verdicts.skip, 4);
+  });
 });

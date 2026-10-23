@@ -87,6 +87,15 @@ describe("heuristics / 域名工具", () => {
     a.equal(t(""), 50, "空域名给 50");
   });
 
+  it("名单只认主机名边界，仿冒域名蹭不到白名单高可信", () => {
+    const env = boot();
+    const t = env.win.RS.heuristics.trustOfDomain;
+    a.equal(t("developer.chrome.com.evil.io"), 55, "子串碰瓷白名单域名必须给中性分，不能给 88");
+    a.equal(t("notgithub.com"), 55, "包含 github.com 子串不算 GitHub");
+    a.equal(t("baijiahao.baidu.com.evil.io"), 55, "低可信名单同样只认边界");
+    a.equal(t("sub.docs.python.org"), 88, "真正的子域仍然命中");
+  });
+
   it("可信度名单里不应混入非 URL 片段的字符串", () => {
     const env = boot();
     const RS = env.win.RS;
