@@ -297,5 +297,9 @@ sequenceDiagram
 
 ## 未纳入功能账簿的仓库内容
 
-- `tools/`：`make_icons.py`（图标生成）、`test_jev.mjs`（真实 API 验证）、`bench_latency.mjs`（延迟基准）、`test_serp_calibrate.mjs`（SERP 标定工具，未进 package.json scripts）。
-- `design-review.html`、`gh-push.ps1`、`github-push-from-agent.md`：开发辅助产物，不属于扩展功能；发布打包时必须排除（见 IMPROVEMENTS）。
+- `tools/`：`make_icons.py`（图标生成）、`pack.mjs`（商店发布打包）、`test_jev.mjs`（真实 API 验证）、`bench_latency.mjs`（延迟基准）、`test_serp_calibrate.mjs`（SERP 标定工具，未进 package.json scripts）。
+- `design-review.html`、`gh-push.ps1`、`github-push-from-agent.md`：开发辅助产物，不属于扩展功能。
+  **已由白名单打包器自动排除**（`tools/pack.mjs`，2026-11-02 落地）：包内只认
+  `manifest.json / README.md / LICENSE / src/ / icons/`，其余一律不进。
+  打包后逐条核对 manifest 引用的文件都在包里，且 `src/lib/config.js`（本地真实 API Key）不在包内。
+  契约由 `tests/cases/13-pack.test.mjs` 守住。

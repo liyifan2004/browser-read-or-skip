@@ -80,7 +80,7 @@
 | --- | --- | --- | --- | --- | --- |
 | IMP-8 | 真实浏览器验证缺位：全部"已验证"都是 jsdom 模拟；引擎选择器、SW 休眠唤醒、样式隔离在真实 Chrome 无自动化证据 | P2 | F-005/016/017 | 引入 Playwright/Puppeteer 冒烟：加载扩展→本地夹具页→断言徽章/HUD/缓存；引擎真实页用录制快照 | 起码一条真实浏览器冒烟进 CI |
 | IMP-9 | `init().catch(() => {})` 静默吞初始化异常（README 自评「最坏的一类」） | P2 | F-001/F-014 | catch 里 `console.warn` + 记 `S.skipped="error"` 供弹窗解释 | 人为抛错时弹窗能看到原因 |
-| IMP-10 | 发布打包无自动化：`design-review.html`、`gh-push.ps1`、`github-push-from-agent.md`、`tools/`、`tests/` 会混进商店包 | P2 | 发布 | `tools/pack.mjs` 白名单打包（manifest/src/icons/README/LICENSE）+ 结构自检 | 产出 zip 仅含运行必需文件 |
+| IMP-10 | ~~发布打包无自动化~~ **已处理（2026-11-02）** | ~~P2~~ | 发布 | `tools/pack.mjs` 白名单打包（manifest/src/icons/README/LICENSE）+ 结构自检；新增 `tests/cases/13-pack.test.mjs` 5 用例守住「密钥不进包 / manifest 引用齐全 / 无开发产物 / 体积 <1MB」 | 产出 zip 仅含运行必需文件 |
 | IMP-11 | `composite()`/`domainOf()`/`esc()` 多处重复实现（hud/popup/options/sw） | P3 | F-010 等 | 收敛进 `src/lib/`（如 `format.js`），各处引用 | 唯一实现，测试全绿 |
 | IMP-12 | 引擎选择器硬编码，改版需发版（uBlacklist SERPINFO 方向，R2） | P3 | F-005 | 引擎描述数据化（本地 JSON/常量表分离），逻辑与数据解耦 | 改选择器不动逻辑 |
 | IMP-13 | `pausedSites` 过期条目永不清理，长期累积垃圾键 | P3 | F-012 | 读取时顺手剔除过期项（懒清理） | 存储不随时间膨胀 |

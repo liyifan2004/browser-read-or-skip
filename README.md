@@ -6,7 +6,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
 [![Manifest V3](https://img.shields.io/badge/Chrome-Manifest%20V3-4285F4.svg?style=flat-square)](https://developer.chrome.com/docs/extensions/develop/concepts/manifest-v3)
-[![Tests](https://img.shields.io/badge/tests-268%20cases-brightgreen?style=flat-square)](tests/)
+[![Tests](https://img.shields.io/badge/tests-273%20cases-brightgreen?style=flat-square)](tests/)
 
 浏览器扩展（Chrome / Edge，Manifest V3）。打开网页后立刻判断这个页面**值得认真读 / 快速扫 / 可以跳过**，并给出相关度、新信息程度、阅读价值、信息可信度。在搜索结果页上直接给每条结果打等级。
 
@@ -145,13 +145,14 @@ src/
   options/                 设置页
 tools/
   make_icons.py            生成 PNG 图标（纯标准库）
+  pack.mjs                 商店发布打包（白名单 + 结构自检）
   test_jev.mjs             用真实 API 跑三个场景，验证问法与映射
   bench_latency.mjs        输入长度对延迟的影响
   test_serp_calibrate.mjs  SERP 判定校准工具（对比问法收紧前后）
 tests/
   run.mjs                  零依赖测试运行器
   harness/                 jsdom 环境 + chrome API 模拟 + 断言库
-  cases/                   12 个套件 / 268 个用例
+  cases/                   13 个套件 / 273 个用例
 docs/
   FEATURE_LEDGER.md        功能账簿（每项功能的实现/验证/影响面索引）
   TECHNICAL_REFERENCES.md  官方文档与开源项目调研结论
@@ -163,10 +164,20 @@ docs/
 
 ```bash
 npm install                  # 只装一个开发依赖 jsdom；扩展本身零依赖、无构建步骤
-npm test                     # 全部 268 个用例，约 23 秒
+npm test                     # 全部 273 个用例，约 16 秒
 npm test -- heuristics       # 只跑名字里带 heuristics 的套件
 npm test -- 并发              # 也可以按中文用例名过滤
 ```
+
+```bash
+# 打包成商店发布包（白名单：manifest/src/icons/README/LICENSE）
+node tools/pack.mjs          # 生成 read-or-skip.zip
+node tools/pack.mjs --check  # 只自检，不写 zip
+```
+
+打包器只认「运行必需文件」：`src/lib/config.js`（本地真实 API Key）永远不会进包，
+扩展会回退到 `config.example.js`，由用户在设置页手填 Key。
+新增文件默认不进商店包——要进必须显式改 `tools/pack.mjs` 的白名单。
 
 ```bash
 # 用真实 API 验证判定质量（会打印 Jev 的原始 answers）

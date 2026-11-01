@@ -65,3 +65,37 @@
 1. `fix(serp)`：查询词提取引擎化（serp.js + 07 回归契约）
 2. `fix(core)`：隐私单路径 / REQUEST_STATE 应答 / 写锁 / 域名边界（其余 src + 02/05/09 回归契约，268 用例全绿）
 3. `docs`：功能账簿体系 4 文档 + README 同本记录
+
+## 2026-11-02 · IMP-10 发布打包自动化
+
+**目标**：商店包用白名单打包，杜绝开发产物与本地密钥混进去。
+
+**做法**：新增 `tools/pack.mjs`。
+
+- **白名单而非黑名单**：只认「运行必需文件」（manifest.json / README.md / LICENSE / src/ / icons/）。
+  黑名单会在新增目录时静默漏排——只要有人忘了加排除项，开发产物就进包了。
+  白名单下新文件默认不进包，要进包必须显式改清单。
+- **两条硬红线**：
+  1. `src/lib/config.js`（真实 API Key）永远不进包，扩展在缺它时回退到 `config.example.js`（apiKey 为空），
+     用户在设置页手填 Key——这是设计好的降级路径。
+  2. 打包后逐条核对 manifest 引用的文件都在包里、包里没有多余文件。
+- **零新依赖**：用 node 自带的 `node:zlib` 手工构造 zip（运行时零依赖是本项目硬约束）。
+  打包器不引入任何 npm 包。
+
+**实现中修掉的两个自己的 bug**（都写进了注释）：
+1. 第一版目录遍历只取了一层，`src/background/`、`src/lib/` 下的文件全漏掉 → 改成递归。
+2. 第一版把 `config.example.js` 排除了——**这是错的**。`service-worker.js` 在 `config.js` 缺失时
+   `importScripts` 回退到它，少了这个文件后台直接起不来。已改为必须进包。
+
+**测试**：新增 `tests/cases/13-pack.test.mjs` 5 个用例，直接读 zip 的中央目录（不依赖打包器代码）：
+- 打包自检通过；
+- zip 合法且不含 `config.js`、含 `config.example.js`；
+- manifest 引用的 14 个文件都在包里；
+- 包里没有 tests/tools/docs/assets、没有开发文件、没有 jpg/@2x 源图；
+- 包体 < 1MB（实际 76.3 KB / 24 个文件）。
+
+**验证**：`npm test` 268 → 273 用例全绿；另用 Python 的 `zipfile`（独立实现，不复用打包器逻辑）
+做过 CRC 校验与内容抽检——CRC OK，manifest 可解析，密钥文件确认不在包内。
+
+**未执行**：真实 Chrome 加载商店包的冒烟验证（本机无 Chrome for Testing，见 IMP-8）；
+`npm run test:api`（需真实 Key、真实计费）仍未跑。
