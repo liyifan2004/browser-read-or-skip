@@ -1,0 +1,40 @@
+# CI for Browser Read-or-Skip.
+#
+# The extension has zero runtime dependencies; the test suite and the
+# packaging checker are zero-dependency Node scripts (jsdom is the only
+# dev dependency).
+#
+# Runs on every push and every pull request. A test that is not wired into
+# CI is not a gate.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Tests
+        run: npm test
+
+      - name: Packaging self-check (whitelist)
+        run: node tools/pack.mjs --check
