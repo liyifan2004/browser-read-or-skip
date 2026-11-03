@@ -171,8 +171,9 @@ npm test -- 并发              # 也可以按中文用例名过滤
 
 ```bash
 # 打包成商店发布包（白名单：manifest/src/icons/README/LICENSE）
-node tools/pack.mjs          # 生成 read-or-skip.zip
-node tools/pack.mjs --check  # 只自检，不写 zip
+node tools/pack.mjs                # 生成 read-or-skip.zip
+node tools/pack.mjs --versioned    # 生成 read-or-skip-<版本>.zip（发布用）
+node tools/pack.mjs --check        # 只自检，不写 zip
 ```
 
 打包器只认「运行必需文件」：`src/lib/config.js`（本地真实 API Key）永远不会进包，

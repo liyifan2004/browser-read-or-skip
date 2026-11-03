@@ -2,8 +2,9 @@
 /**
  * 商店发布打包（白名单式）。
  *
- *   node tools/pack.mjs            # 生成 read-or-skip.zip
- *   node tools/pack.mjs --check    # 只自检，不写 zip
+ *   node tools/pack.mjs                # 生成 read-or-skip.zip
+ *   node tools/pack.mjs --versioned    # 生成 read-or-skip-<版本>.zip（发布用）
+ *   node tools/pack.mjs --check        # 只自检，不写 zip
  *
  * 为什么要白名单而不是黑名单：
  * 黑名单（"排除 tools/ tests/ docs/"）会在新增目录时静默漏排——只要有人
@@ -23,8 +24,34 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(url.fileURLToPath(import.meta.url)), "..");
-const OUT_ZIP = path.join(ROOT, "read-or-skip.zip");
 const CHECK_ONLY = process.argv.includes("--check");
+
+/**
+ * 产物文件名。
+ *
+ * 默认不带版本号（本地试用友好）；带 `--versioned` 时按
+ * `read-or-skip-<manifest.version>.zip` 命名——发布用的资产名必须
+ * 带版本，否则同一个 Release 里换版时无法区分哪个 zip 是新的
+ * （1.0.0 的发布资产就是手工改名成 read-or-skip-1.0.0.zip 的，
+ *  下次很容易传错文件）。
+ */
+const VERSIONED = process.argv.includes("--versioned");
+
+function manifestVersion() {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(ROOT, "manifest.json"), "utf8")).version;
+  } catch {
+    return null;
+  }
+}
+
+function outZipPath() {
+  const version = manifestVersion();
+  const name = VERSIONED && version ? `read-or-skip-${version}.zip` : "read-or-skip.zip";
+  return path.join(ROOT, name);
+}
+
+const OUT_ZIP = outZipPath();
 
 /** 进包的顶层目录 / 文件（白名单） */
 const INCLUDE_TOP = new Set(["manifest.json", "README.md", "LICENSE"]);

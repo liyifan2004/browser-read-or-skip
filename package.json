@@ -8,7 +8,10 @@
     "test": "node tests/run.mjs",
     "test:api": "node tools/test_jev.mjs",
     "bench": "node tools/bench_latency.mjs",
-    "icons": "python tools/make_icons.py"
+    "icons": "python tools/make_icons.py",
+    "pack": "node tools/pack.mjs",
+    "pack:versioned": "node tools/pack.mjs --versioned",
+    "pack:check": "node tools/pack.mjs --check"
   },
   "devDependencies": {
     "jsdom": "^25.0.1"
