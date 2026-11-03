@@ -11,7 +11,8 @@
     "icons": "python tools/make_icons.py",
     "pack": "node tools/pack.mjs",
     "pack:versioned": "node tools/pack.mjs --versioned",
-    "pack:check": "node tools/pack.mjs --check"
+    "pack:check": "node tools/pack.mjs --check",
+    "version": "node tools/version-bump.mjs && git add manifest.json package.json"
   },
   "devDependencies": {
     "jsdom": "^25.0.1"
