@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync } from 'node:fs';
-import { pickVersion, computeVersionSync } from './version-sync.mjs';
+import { pickVersion, computeVersionSync, replaceVersionInJsonText } from './version-sync.mjs';
 
 /**
  * 版本号同步脚本 —— 让 `npm version` 成为唯一的版本号入口。
@@ -21,37 +21,54 @@ import { pickVersion, computeVersionSync } from './version-sync.mjs';
  */
 
 /**
- * 读写 JSON 时保留原文件的缩进风格、行尾和结尾换行。
+ * 只替换 JSON 文本里的 version 字段值，其余字节一个都不动。
  *
- * 本仓库的 manifest.json 是 CRLF 行尾：直接 JSON.stringify + writeFileSync
- * 会写成 LF，产生一个「整个文件都变了」的 diff —— 真正的版本号改动就被
- * 淹没在噪音里，review 的人根本看不出改了什么。
+ * ## 为什么不 JSON.stringify 写回
+ *
+ * `JSON.stringify(data, null, indent)` 会对所有数组与对象做统一展开，
+ * 原文件里手写的紧凑单行数组会被改写成多行：
+ *
+ * ```diff
+ * -  "permissions": ["storage", "activeTab"],
+ * +  "permissions": [
+ * +    "storage",
+ * +    "activeTab"
+ * +  ],
+ * ```
+ *
+ * 后果：一次版本号改动产生 28 行 diff，其中只有 1 行是真正的改动。
+ * review 的人看不出改了什么，自动化 diff 审查也被噪音淹没。
+ * 详见 tools/version-sync.mjs 的 replaceVersionInJsonText 注释。
  */
-function readJson(path) {
-	const raw = readFileSync(path, 'utf8');
-	return {
-		data: JSON.parse(raw),
-		indent: /^\t/m.test(raw) ? '\t' : /^\s+/m.test(raw) ? '  ' : '\t',
-		crlf: raw.includes('\r\n'),
-		trailingNewline: raw.endsWith('\n'),
-	};
+function patchVersionField(path, version) {
+	const before = readFileSync(path, 'utf8');
+	const after = replaceVersionInJsonText(before, version);
+	if (after === null) {
+		console.error(`version-bump.mjs: ${path} 里找不到 "version" 字段，无法更新版本号。`);
+		process.exit(1);
+	}
+	if (after !== before) writeFileSync(path, after);
+	return after !== before;
 }
 
-function writeJson(path, data, indent, crlf, trailingNewline) {
-	let text = JSON.stringify(data, null, indent);
-	if (crlf) text = text.replace(/\n/g, '\r\n');
-	if (trailingNewline && !text.endsWith('\n')) text += '\n';
-	writeFileSync(path, text);
-}
+const manifestText = readFileSync('manifest.json', 'utf8');
+const pkgText = readFileSync('package.json', 'utf8');
 
-const manifestFile = readJson('manifest.json');
-const pkgFile = readJson('package.json');
+let manifestData;
+let pkgData;
+try {
+	manifestData = JSON.parse(manifestText);
+	pkgData = JSON.parse(pkgText);
+} catch (e) {
+	console.error('version-bump.mjs: manifest.json 或 package.json 不是合法 JSON。', e && e.message);
+	process.exit(1);
+}
 
 /** npm 刚写入的版本号（`npm run version` 时为 package.json 的现值）。 */
 const npmVersion = process.env.npm_package_version;
 
 const targetVersion = pickVersion({
-	manifestVersion: manifestFile.data.version,
+	manifestVersion: manifestData.version,
 	npmVersion,
 });
 
@@ -63,8 +80,8 @@ if (!targetVersion) {
 }
 
 const next = computeVersionSync({
-	manifest: manifestFile.data,
-	packageJson: pkgFile.data,
+	manifest: manifestData,
+	packageJson: pkgData,
 	versions: {},
 	targetVersion,
 });
@@ -74,9 +91,10 @@ if (!next) {
 	process.exit(1);
 }
 
-writeJson('manifest.json', next.manifest, manifestFile.indent, manifestFile.crlf, manifestFile.trailingNewline);
-writeJson('package.json', next.packageJson, pkgFile.indent, pkgFile.crlf, pkgFile.trailingNewline);
+const manifestChanged = patchVersionField('manifest.json', next.manifest.version);
+const pkgChanged = patchVersionField('package.json', next.packageJson.version);
 
 console.log(
-	`version-bump: ${targetVersion} — manifest.json / package.json 已同步`,
+	`version-bump: ${targetVersion} — manifest.json / package.json 已同步` +
+		(manifestChanged || pkgChanged ? '' : '（本来就是目标版本号，无需改动）'),
 );

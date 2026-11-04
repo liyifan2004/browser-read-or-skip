@@ -8,11 +8,13 @@
  */
 import { it } from '../harness/registry.mjs';
 import * as assert from '../harness/assert.mjs';
+import { readFile } from '../harness/env.mjs';
 import {
   compareSemver,
   computeVersionSync,
   parseSemver,
   pickVersion,
+  replaceVersionInJsonText,
 } from '../../tools/version-sync.mjs';
 
 it('parseSemver accepts only a bare three-part version', () => {
@@ -90,4 +92,74 @@ it('computeVersionSync does not mutate its inputs', () => {
   computeVersionSync({ manifest, packageJson, versions: {}, targetVersion: '1.2.1' });
   assert.equal(manifest.version, '1.2.0');
   assert.equal(packageJson.version, '1.2.0');
+});
+
+/* ------------------------------------------------------------------ *
+ * 版本号替换必须只动一个字段
+ *
+ * 回归用例：旧实现用 JSON.stringify 写回整个文件，
+ * 原文件里手写的紧凑单行数组（"permissions": ["storage", "activeTab"]）
+ * 会被展开成多行 —— 一次版本号改动产生 28 行 diff，其中只有 1 行是真改动。
+ * 版本号改动被噪音淹没，review 与自动化 diff 审查都看不出改了什么。
+ * ------------------------------------------------------------------ */
+
+it('replaceVersionInJsonText only changes the version value', () => {
+  const before = [
+    '{',
+    '  "manifest_version": 3,',
+    '  "version": "1.1.0",',
+    '  "permissions": ["storage", "activeTab"],',
+    '}',
+  ].join('\n');
+  const after = replaceVersionInJsonText(before, '1.2.0');
+  assert.includes(after, '"version": "1.2.0"');
+  assert.includes(after, '"permissions": ["storage", "activeTab"]');
+  // 紧凑数组必须原样保留 —— 这正是旧实现破坏的东西
+  assert.equal(
+    after.split('\n').length,
+    before.split('\n').length,
+    '行数不应变化（旧实现会把紧凑数组展开成多行）'
+  );
+});
+
+it('replaceVersionInJsonText preserves CRLF line endings and trailing newline', () => {
+  const before = '{\r\n  "version": "1.1.0",\r\n  "permissions": ["storage"]\r\n}\r\n';
+  const after = replaceVersionInJsonText(before, '1.2.0');
+  assert.includes(after, '"version": "1.2.0"');
+  assert.includes(after, '\r\n');
+  assert.ok(after.endsWith('\r\n'), '结尾换行必须保留');
+});
+
+it('replaceVersionInJsonText does not touch other keys containing "version"', () => {
+  const before = '{\n  "version": "1.1.0",\n  "minAppVersion": "1.5.0",\n  "version_name": "keep"\n}';
+  const after = replaceVersionInJsonText(before, '1.2.0');
+  assert.includes(after, '"minAppVersion": "1.5.0"', 'minAppVersion 不得被改');
+  assert.includes(after, '"version_name": "keep"', 'version_name 不得被改');
+  assert.includes(after, '"version": "1.2.0"');
+});
+
+it('replaceVersionInJsonText returns null when there is no version field', () => {
+  assert.equal(replaceVersionInJsonText('{"a": 1}', '1.2.0'), null);
+});
+
+it('replaceVersionInJsonText is idempotent', () => {
+  const before = '{\n  "version": "1.1.0"\n}';
+  const once = replaceVersionInJsonText(before, '1.2.0');
+  const twice = replaceVersionInJsonText(once, '1.2.0');
+  assert.equal(twice, once);
+});
+
+it('the real manifest.json version bump changes exactly one line', () => {
+  // 直接拿仓库里的真 manifest.json 做断言：这是最贴近真实用法的守门。
+  const before = readFile('manifest.json');
+  const after = replaceVersionInJsonText(before, '9.9.9');
+  assert.ok(after, '应能替换出结果');
+
+  const beforeLines = before.split('\n');
+  const afterLines = after.split('\n');
+  assert.equal(afterLines.length, beforeLines.length, '行数必须一致');
+
+  const changed = afterLines.filter((line, i) => line !== beforeLines[i]);
+  assert.equal(changed.length, 1, '只应有一行发生变化，实际: ' + changed.length);
+  assert.includes(changed[0], '"version"');
 });

@@ -91,3 +91,46 @@ export function computeVersionSync({ manifest, packageJson, versions, targetVers
 		skippedVersionsEntry: !(targetVersion in versions) && !hasMinAppVersion,
 	};
 }
+
+/**
+ * 只替换 JSON 文本里的 version 字段值，**不重新序列化整个文件**。
+ *
+ * ## 为什么不能直接 JSON.stringify 写回
+ *
+ * `JSON.stringify(data, null, indent)` 会对所有数组与对象做统一展开：
+ * 原文件里手写的紧凑单行数组（`"permissions": ["storage", "activeTab"]`）
+ * 会被改写成多行：
+ *
+ * ```diff
+ * -  "permissions": ["storage", "activeTab"],
+ * +  "permissions": [
+ * +    "storage",
+ * +    "activeTab"
+ * +  ],
+ * ```
+ *
+ * 后果：一次版本号改动产生 28 行 diff，其中只有 1 行是真正的改动。
+ * review 的人看不出改了什么，自动化的 diff 审查也会被噪音淹没。
+ * **这是「保留原格式」这个承诺只兑现了一半** —— 行尾保留了，数组排版没保留。
+ *
+ * ## 做法
+ *
+ * 只做一次**文本替换**：定位 `"version"` 这个键，把它的值换成新的版本号，
+ * 其余字节一个都不动。文件里其余部分的排版、行尾、结尾换行自然全部保留。
+ *
+ * @param {string} text 原文件文本
+ * @param {string} version 新的版本号
+ * @returns {string} 只改了 version 值的新文本；找不到 version 字段时返回 null
+ */
+export function replaceVersionInJsonText(text, version) {
+	const source = String(text ?? "");
+	// 匹配 "version": "任意非引号字符" —— 只改顶层/嵌套的 version 键，
+	// 不碰 "minAppVersion" / "version_name" 之类含 version 的其它键。
+	const re = /("version"\s*:\s*)"([^"\\]*)"/;
+	const m = re.exec(source);
+	if (!m) return null;
+	const start = m.index;
+	const valueStart = start + m[1].length;
+	const valueEnd = valueStart + m[2].length + 2; // 含两侧引号
+	return source.slice(0, valueStart) + JSON.stringify(version) + source.slice(valueEnd);
+}
