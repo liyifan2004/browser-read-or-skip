@@ -4,6 +4,62 @@
 
 ---
 
+## 2026-11-04 · 发布 1.2.0
+
+**包含**：第十轮的安全修复（IMP-22，模型名未转义 → HTML 注入）
++ 版本号同步脚本的排版修复（见下）。
+
+### 发布前发现并修掉的缺陷：版本号改动被噪音淹没
+
+第一次准备打 1.2.0 时，`npm version minor` 产生了 **28 行 diff，其中只有 1 行是真改动**：
+
+```diff
+-  "version": "1.1.0",
++  "version": "1.2.0",
+-  "permissions": ["storage", "activeTab"],
+-
+-  "host_permissions": ["https://api.typesafe.ai/*"],
++  "permissions": [
++    "storage",
++    "activeTab"
++  ],
+```
+
+**根因**：`version-bump.mjs` 用 `JSON.stringify(data, null, indent)` 写回整个文件。
+它保留了行尾与缩进，却没保留**紧凑单行数组**的排版 ——
+`JSON.stringify` 会对所有数组做统一展开。
+
+脚本自己的注释声称「读写 JSON 时保留原文件的缩进风格、行尾和结尾换行」——
+**这个承诺只兑现了一半**。行尾保留了，数组排版没保留。
+
+**为什么这条值得单独修**：发版是「改动最需要被看清」的时刻，
+而版本号提交恰恰是**最容易被忽略**的提交（commit message 就是 "1.2.0"）。
+diff 一旦被噪音淹没，review 时就会直接跳过 —— 于是发版脚本引入的排版变更
+会静悄悄地累积到下一次发版，直到某天有人发现 manifest 被人重排过。
+
+**改法**：只做一次**文本替换**（定位 `"version"` 键，替换它的值），
+其余字节一个都不动。排版、行尾、结尾换行自然全部保留。
+
+**效果**：同一个操作，diff 从 **28 行降到 4 行**（manifest 1 + package 1 +
+package-lock 2，全是真实的版本号改动）。
+
+**新增 6 例测试**（`tests/cases/14-version-sync.test.mjs`），
+其中末条直接拿仓库里的**真 manifest.json** 断言「只变一行」——
+最贴近真实用法的守门。
+
+**顺带核实**：其余 6 个仓库的 `version-bump.mjs` 也用 `JSON.stringify` 写回，
+但它们的 JSON 已是全展开格式，实际不产生噪音 —— **缺陷仅存在于本仓库**。
+（唯一例外是 adaptive-workspace 与 mineru 的 `tsconfig.json` 里有紧凑数组，
+但版本号脚本不碰这两个文件。）
+
+### 发布验证
+
+- `node tests/run.mjs` → **315 / 315**（原 309）
+- `node tools/pack.mjs --check` → 自检通过
+- tag `1.2.0` 指向版本提交；release.yml 有「tag 必须匹配 manifest 版本」的闸门
+
+---
+
 ## 2026-11-04 · 第十轮：模型名未转义 → HTML 注入（IMP-22）
 
 ### 本次目标与完成情况
