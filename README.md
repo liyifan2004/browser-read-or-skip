@@ -6,7 +6,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
 [![Manifest V3](https://img.shields.io/badge/Chrome-Manifest%20V3-4285F4.svg?style=flat-square)](https://developer.chrome.com/docs/extensions/develop/concepts/manifest-v3)
-[![Tests](https://img.shields.io/badge/tests-298%20cases-brightgreen?style=flat-square)](tests/)
+[![Tests](https://img.shields.io/badge/tests-304%20cases-brightgreen?style=flat-square)](tests/)
 
 浏览器扩展（Chrome / Edge，Manifest V3）。打开网页后立刻判断这个页面**值得认真读 / 快速扫 / 可以跳过**，并给出相关度、新信息程度、阅读价值、信息可信度。在搜索结果页上直接给每条结果打等级。
 
@@ -152,7 +152,7 @@ tools/
 tests/
   run.mjs                  零依赖测试运行器
   harness/                 jsdom 环境 + chrome API 模拟 + 断言库
-  cases/                   14 个套件 / 298 个用例
+  cases/                   14 个套件 / 304 个用例
 docs/
   FEATURE_LEDGER.md        功能账簿（每项功能的实现/验证/影响面索引）
   TECHNICAL_REFERENCES.md  官方文档与开源项目调研结论
@@ -164,7 +164,7 @@ docs/
 
 ```bash
 npm install                  # 只装一个开发依赖 jsdom；扩展本身零依赖、无构建步骤
-npm test                     # 全部 298 个用例，约 14 秒
+npm test                     # 全部 304 个用例，约 15 秒
 npm test -- heuristics       # 只跑名字里带 heuristics 的套件
 npm test -- 并发              # 也可以按中文用例名过滤
 ```

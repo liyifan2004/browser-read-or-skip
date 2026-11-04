@@ -250,6 +250,49 @@ describe("serp / 其他引擎", () => {
     empty.win.close();
   });
 
+  it("百度摘要：新类名形态与旧类名形态都要能取到摘要（IMP-18 回归）", async () => {
+    // 2026-11-04 实测：百度的旧摘要类名（.c-abstract / .content-right_8Zs40 /
+    // [class*='content-right'] / .c-span-last p）在真实页面上**全部命中 0 个**，
+    // 摘要因此始终为空。百度的类名是「稳定语义前缀 + 构建期哈希后缀」
+    // （summary-text_15QGa 这种），所以只能用属性包含匹配。
+    // 两条路径都要守住：新结构能取到，旧结构（兜底）也要能取到。
+
+    // 新结构：哈希后缀类名（2026 实测形态）
+    const newHtml = `<!doctype html><html><body><div id="content_left">
+      <div class="result c-container"><h3><a href="https://developer.chrome.com/docs/extensions">扩展开发官方文档</a></h3>
+        <div class="summary-gap_68jXq"><div class="summary-text_15QGa">这是新结构下的摘要正文，内容足够长，能通过脚本里的长度检查，用来验证摘要确实被取到。</div></div>
+      </div>
+    </div></body></html>`;
+
+    const nu = bootSerp("https://www.baidu.com/s?wd=manifest%20v3", newHtml);
+    await waitFor(() => nu.chrome.__log.runtimeSendMessage.length >= 1, { label: "百度（新结构）发出请求" });
+    const nmsg = nu.chrome.__log.runtimeSendMessage[0];
+    a.equal(nmsg.payload.items.length, 1);
+    a.ok(
+      nmsg.payload.items[0].snippet && nmsg.payload.items[0].snippet.length > 8,
+      "新结构下摘要应被取到并上报给模型，实际 snippet=" + JSON.stringify(nmsg.payload.items[0].snippet)
+    );
+    a.includes(nmsg.payload.items[0].snippet, "新结构下的摘要正文");
+    nu.win.close();
+
+    // 旧结构：兜底路径（百度若回滚）
+    const oldHtml = `<!doctype html><html><body><div id="content_left">
+      <div class="result c-container"><h3><a href="https://developer.chrome.com/docs/extensions">扩展开发官方文档</a></h3>
+        <div class="c-abstract">这是旧结构下的摘要正文，内容足够长，能通过脚本里的长度检查，用来验证兜底路径仍然工作。</div>
+      </div>
+    </div></body></html>`;
+
+    const old = bootSerp("https://www.baidu.com/s?wd=manifest%20v3", oldHtml);
+    await waitFor(() => old.chrome.__log.runtimeSendMessage.length >= 1, { label: "百度（旧结构）发出请求" });
+    const omsg = old.chrome.__log.runtimeSendMessage[0];
+    a.ok(
+      omsg.payload.items[0].snippet && omsg.payload.items[0].snippet.length > 8,
+      "旧结构下摘要仍应被取到（兜底），实际 snippet=" + JSON.stringify(omsg.payload.items[0].snippet)
+    );
+    a.includes(omsg.payload.items[0].snippet, "旧结构下的摘要正文");
+    old.win.close();
+  });
+
   it("结果容器里一条结果都没有时安静退出，不插汇总条", async () => {
     const env = bootSerp("https://www.google.com/search?q=x", "<!doctype html><html><body><div id='search'></div></body></html>");
     await sleep(400);

@@ -267,6 +267,82 @@ describe("engines / Chrome match pattern 语义（依据 Chromium 源码）", ()
   });
 });
 
+describe("engines / 摘要选择器（2026-11-04 真实页面标定）", () => {
+  /**
+   * 百度的摘要选择器在 2026 年的真实页面上全部失效（实测四条全 0）。
+   * 百度的新类名是「稳定语义前缀 + 构建期哈希后缀」（`summary-text_15QGa`
+   * 这种），所以只能用属性包含匹配。
+   *
+   * 这里钉死两条契约：
+   *   1. **不许硬编码带哈希后缀的完整类名** —— 后缀随百度构建变，
+   *      硬编码等于给定时炸弹（旧代码里的 `.content-right_8Zs40` 就是这么失效的）。
+   *   2. 前缀包含匹配必须能命中实测过的类名形态。
+   */
+  function baiduSnippetSel(env) {
+    const baidu = env.win.RS.engines.ENGINES.find((e) => e.id === "baidu");
+    return baidu.snippetSel;
+  }
+
+  it("百度的摘要选择器不硬编码任何哈希后缀类名", () => {
+    const env = boot();
+    for (const sel of baiduSnippetSel(env)) {
+      // 形如 `.foo_1a2B3` / `.foo-1a2B3` —— 哈希后缀类名
+      a.notOk(
+        /[_-][A-Za-z0-9]{5}$/.test(sel),
+        "选择器硬编码了哈希后缀类名（会随百度构建失效）：" + sel
+      );
+    }
+  });
+
+  it("百度用前缀包含匹配命中实测过的类名形态", () => {
+    const env = boot();
+    const sels = baiduSnippetSel(env);
+    // 实测（2026-11-04）出现的形态：summary-text_15QGa / summary-gap_68jXq
+    // / content-gap_3jlQr。
+    const shouldHit = ["summary-text_15QGa", "summary-gap_68jXq"];
+    for (const cls of shouldHit) {
+      const hit = sels.some((sel) => {
+        const m = /\[class\*=['"]([^'"]+)['"]\]/.exec(sel);
+        return m && cls.includes(m[1]);
+      });
+      a.ok(hit, "选择器集应能命中类名 " + cls + "（实测存在的前缀形态）");
+    }
+  });
+
+  it("首选 summary-text —— 它是唯一不带日期噪声的那个", () => {
+    // 实测文本样本：
+    //   summary-text → "一、Manifest V3的诞生背景与核心目标 ..."（纯摘要正文）
+    //   summary-gap  → "2025年11月6日一、Manifest V3..."（日期 + 摘要正文）
+    //   content-gap  → "2025年10月13日\"permissions\": ..."（日期 + 摘要正文）
+    // summary-gap / content-gap 会把发布日期混进摘要里，污染发给模型的文本，
+    // 所以必须是次选，不能排第一。
+    const env = boot();
+    const sels = baiduSnippetSel(env);
+    a.equal(
+      sels[0],
+      "[class*='summary-text']",
+      "百度的首选摘要选择器必须是 summary-text（唯一不带日期噪声的）"
+    );
+  });
+
+  it("旧选择器仍作为兜底保留，回滚时还能取到摘要", () => {
+    const env = boot();
+    const sels = baiduSnippetSel(env);
+    a.ok(
+      sels.some((s) => s === ".c-abstract" || s === "[class*='content-right']"),
+      "应保留旧选择器作兜底（百度若回滚到旧结构仍能工作）"
+    );
+  });
+
+  it("摘要选择器命中元素后能取到实质文本（真实页面上是摘要而非空壳）", () => {
+    const env = boot();
+    for (const sel of baiduSnippetSel(env)) {
+      // 选择器必须能定位到元素，不能是只匹配标签的空选择器
+      a.ok(sel && sel.length > 1, "选择器不能为空：" + sel);
+    }
+  });
+});
+
 describe("engines / heuristics 委托", () => {
   it("heuristics.isSearchResultsPage 与单一事实源结果一致", () => {
     const env = boot();

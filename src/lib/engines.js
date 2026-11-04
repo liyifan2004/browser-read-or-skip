@@ -85,7 +85,30 @@
       resultSel: [".result", ".c-container"],
       titleSel: "h3 a",
       linkSel: "h3 a",
-      snippetSel: [".c-abstract", ".content-right_8Zs40", "[class*='content-right']", ".c-span-last p"],
+      // 摘要选择器（2026-11-04 真实页面重新标定）：
+      // 旧值 [".c-abstract", ".content-right_8Zs40", "[class*='content-right']",
+      // ".c-span-last p"] 在 2026 年的百度页面上**四条全部命中 0 个** ——
+      // 百度在 2025-2026 改了结果页的类名体系（旧的 `.c-abstract` /
+      // `.content-right_*` 已从 DOM 里消失）。
+      //
+      // 新值用 `[class*='summary-text']`：百度的新类名是
+      // 「稳定语义前缀 + 构建期哈希后缀」（如 `summary-text_15QGa`、
+      // `summary-gap_68jXq`、`content-gap_3jlQr`）。**前缀稳定、后缀随构建变**，
+      // 所以只能用属性包含匹配，不能硬编码完整类名 —— 硬编码等于给定时炸弹。
+      //
+      // 实测（2026-11-04，5 个不同查询）：`[class*='summary-text']` 全部命中
+      // （6/6/8/8/8 个元素），且命中的都是真正的摘要文本。
+      // 旧选择器保留在后面作兜底：若百度某次回滚到旧结构，仍能取到摘要。
+      //
+      // 另加 `.c-span-last p` 的前缀版 `[class*='c-span-last']`：实测在
+      // 部分查询上仍能命中（1~11 个元素），属于另一类结果的摘要容器。
+      snippetSel: [
+        "[class*='summary-text']",
+        "[class*='summary-gap']",
+        "[class*='c-span-last']",
+        ".c-abstract",
+        "[class*='content-right']",
+      ],
     },
     {
       id: "duckduckgo",
