@@ -629,11 +629,22 @@
     return bits.map(esc).join('<span class="sep">·</span>');
   }
 
+  /**
+   * 判定来源标签。
+   *
+   * 必须转义：`r.model` 来自**远端 API 响应**（service-worker.js 把 resp.model
+   * 原样透传），而这里的返回值会被拼进 `S.card.innerHTML`。
+   * 一旦模型名里带 `<` / `>`，页面里就会多出可执行 DOM —— 这是扩展注入到
+   * 用户页面里的真实 XSS 通道。
+   *
+   * 其余分支是本地固定文案，无需转义，但为了「返回的就是可安全插入的文本」
+   * 这一契约成立，统一走 esc()。
+   */
   function srcLabel(r) {
     if (r.source === "heuristic") return "初判";
     if (r.source === "cache") return "缓存";
     if (r.source === "partial") return "预判";
-    if (r.model) return String(r.model).replace(/^jev-/, "jev ");
+    if (r.model) return esc(String(r.model).replace(/^jev-/, "jev "));
     return "模型";
   }
 

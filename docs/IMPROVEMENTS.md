@@ -92,12 +92,13 @@
 | IMP-15 | 预留消息协议 `RS_RESULT_UPDATE`/`RS_GET_SETTINGS`/`RS_CLEAR_BADGE` 无消费方 | P3 | F-015 | 确认无计划用途后删除，或在账簿注明保留理由 | 协议面收敛 |
 | IMP-16 | 设置无导入/导出，换机/重装丢配置（含黑名单与主题） | P3 | F-011 | 导出/导入 JSON（注意不含 apiKey 或显式确认） | 一键迁移 |
 | IMP-17 | Tarnish 类静态安全扫描未跑（R5） | P3 | 安全 | 安装并跑一次，输出告警清单 | 告警逐条定级 |
+| IMP-22 | ~~`hud.js` 的 `srcLabel()` 未转义 → HTML 注入~~ **已处理（2026-11-04）** | ~~P1~~ | F-005/010 | `r.model` 来自**远端 API 响应**（service-worker.js 把 `resp.model` 原样透传），被 `srcLabel()` 原样拼进 `S.card.innerHTML`。浮层注入在**用户访问的页面**里，这是真实 XSS 通道。同时修 `popup.js` 的 contentType 回退分支。新增 `tests/cases/16-xss-escaping.test.mjs`（5 例，DOM 级断言 + 反证验证） | 载荷只作为纯文本显示，DOM 结构与干净渲染逐标签一致 |
 
 ## 安全与权限审查结论（2026-10-23）
 
 - **权限面**：`storage` + `activeTab` + host_permissions 仅 `https://api.typesafe.ai/*`。无 `tabs`、无 `webRequest`、无 `<all_urls>` host 权限。**结论：最小权限成立。**
 - **内容脚本注入面**：`http://*/*` + `https://*/*` 全站注入是功能必需（任意页面判定），安装时 Chrome 会提示「读取所有网站数据」。商店描述必须披露（P3 文案项）。
-- **输入处理**：所有宿主页/模型来源文本进 innerHTML 前经 `esc()` 转义或走 `textContent`；未发现注入路径。徽章/浮层均 Shadow DOM，`all: initial` 起手。
+- **输入处理**：所有宿主页/模型来源文本进 innerHTML 前经 `esc()` 转义或走 `textContent`；**2026-11-04 第十轮证伪了这条结论**（见 IMP-22）：`hud.js` 的 `srcLabel()` 与 `popup.js` 的 contentType 回退分支是漏网之处，已修并补了 DOM 级回归契约。徽章/浮层均 Shadow DOM，`all: initial` 起手。
 - **密钥**：`src/lib/config.js` 含真实 Key 但已被 `.gitignore` 覆盖（本轮 `git check-ignore`/`git ls-files` 核实：未入库）。无其他密钥入库。
 - **网络**：仅 `api.typesafe.ai` 一个外发端点，无统计上报，与 README 隐私声明一致。
 - **遗留风险**：页面正文默认发往第三方 API（功能本质，隐私模式可关）；`state` 无 schema 校验（信任自家内容脚本，风险可接受）。

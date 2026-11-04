@@ -132,7 +132,11 @@
       const k = r.valueKey || r.value;
       chips.push('<span class="chip">阅读价值 <b>' + (RS.VALUE_LABEL[k] || "–") + "</b></span>");
     }
-    if (r.contentType) chips.push('<span class="chip">' + (RS.CONTENT_TYPE_LABEL[r.contentType] || r.contentType) + "</span>");
+    if (r.contentType) {
+      // 与 hud.js 的 chipsHTML 保持一致：查不到标签就回退到原文，
+      // 而原文必须转义 —— contentType 来自模型返回，缓存里的旧版本结果也可能带任意值。
+      chips.push('<span class="chip">' + esc(RS.CONTENT_TYPE_LABEL[r.contentType] || r.contentType) + "</span>");
+    }
     if (r.readingMinutes) chips.push('<span class="chip">约 <b>' + r.readingMinutes + "</b> 分钟</span>");
     if (r.lowConfidence) chips.push('<span class="chip warn">置信度偏低 ' + Math.round(r.confidence * 100) + "%</span>");
     if (chips.length) {
