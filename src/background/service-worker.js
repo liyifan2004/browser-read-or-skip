@@ -15,6 +15,7 @@ try {
 }
 importScripts(
   "/src/lib/constants.js",
+  "/src/lib/engines.js",
   "/src/lib/jev.js",
   "/src/lib/storage.js",
   "/src/lib/questions.js",

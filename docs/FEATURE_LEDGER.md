@@ -97,13 +97,13 @@
 - **用户价值**：搜索时直接看每条结果的等级与可信度，少点开垃圾页。
 - **触发入口**：6 引擎结果页自动（Google/HK/TW、Bing/中国版、百度、搜狗、DuckDuckGo、Brave）；`annotateSerp` 关闭时 HUD 顶上（不出现两边都空）。
 - **预期行为**：识别引擎 → 等待结果节点 → 每条自然结果标题内插 Shadow DOM 徽章（等级 + 可信度%，悬停详情；非颜色线索：实心点/空心点/短横）→ 跳过引擎站内链接 → 顶部汇总条（读/扫/跳过计数）→ `EVALUATE_SERP` 批量评估（后台并发 5）→ 原地填结果。结果按 URL 写缓存（partial），点进结果页时 HUD 秒出预判。
-- **实现位置**：`src/content/serp.js`（ENGINES 表、scan/placeChip/paintChip/renderSummary/observe）；后台 `handleSerp`。
+- **实现位置**：`src/lib/engines.js`（**搜索引擎的单一事实源**：引擎 id / 主机 / 路径 / 查询词参数 / DOM 选择器 / match pattern）；`src/content/serp.js`（scan/placeChip/paintChip/renderSummary/observe）；后台 `handleSerp`。
 - **运行环境**：content script（top frame）；徽章在各自 shadow root，汇总条在 light DOM（`#rs-serp-style` 一次注入）。
 - **API 与权限**：`chrome.runtime.sendMessage`（EVALUATE_SERP）；`MutationObserver`（结果容器，400ms 防抖）。
 - **配置与数据**：`annotateSerp`、`serpMaxResults`（默认 8）。
 - **当前状态**：已实现。
-- **验证状态**：已验证（自动）：`07-serp`（识别、插入位置、shadow 隔离、汇总、失败降级、审计契约、RTL）、`11-ui-regression`（WCAG 对比度复算、防御 CSS 契约）。**待核实**：各引擎真实 DOM（选择器随引擎改版失效是常态）。
-- **已知问题**：① 查询词只从 `?q=` 提取——百度（`wd`/`word`）、搜狗（`query`）拿不到查询词，SERP 判定缺主信号（本轮已修，按引擎配置化）；② 引擎选择器硬编码在代码里，改版需发版（uBlacklist 的 SERPINFO 外置数据方案可参考，见 R2）；③ `collectNodes` 命中 ≥3 条即停，后续选择器的补充结果可能漏。
+- **验证状态**：已验证（自动）：`07-serp`（识别、插入位置、shadow 隔离、汇总、失败降级、审计契约、RTL）、`11-ui-regression`（WCAG 对比度复算、防御 CSS 契约）、`15-engines`（单一事实源一致性、防空窗/防双标注回归、Chrome match pattern 语义）。**已验证（真实浏览器，2026-11-04）**：Playwright + 本地夹具页 + `--host-resolver-rules` 实测徽章注入。**待核实**：各引擎真实 DOM（选择器随引擎改版失效是常态）。
+- **已知问题**：① 查询词只从 `?q=` 提取——百度（`wd`/`word`）、搜狗（`query`）拿不到查询词，SERP 判定缺主信号（本轮已修，按引擎配置化）；② 引擎选择器硬编码在代码里，改版需发版（uBlacklist 的 SERPINFO 外置数据方案可参考，见 R2）；③ `collectNodes` 命中 ≥3 条即停，后续选择器的补充结果可能漏；④ 2026-11-04 实测：百度的摘要选择器（`.c-abstract` / `.content-right_8Zs40` / `[class*='content-right']` / `.c-span-last p`）在 2026 年的真实页面上**命中 0 个**，百度的摘要因此始终为空——待重新标定。
 - **关联关系**：F-004（serpQuestions）、F-006（partial 缓存）、F-016/017（样式隔离与审计）、F-001（HUD 让位规则）。
 
 ## F-006 结果缓存（LRU / TTL）

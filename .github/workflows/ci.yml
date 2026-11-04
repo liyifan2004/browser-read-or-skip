@@ -36,5 +36,11 @@ jobs:
       - name: Tests
         run: npm test
 
+      # 结果页 match pattern 必须与 src/lib/engines.js（搜索引擎的单一事实源）一致。
+      # 三处定义漂移的后果是用户可见的静默故障：HUD 让位了但没注入标注，
+      # 结果页上既看不到徽章也看不到浮层（空窗）。
+      - name: Manifest / engines sync check
+        run: node tools/sync-engines.mjs --check
+
       - name: Packaging self-check (whitelist)
         run: node tools/pack.mjs --check

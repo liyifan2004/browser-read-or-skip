@@ -43,6 +43,7 @@
       "js": [
         "src/lib/namespace.js",
         "src/lib/constants.js",
+        "src/lib/engines.js",
         "src/lib/storage.js",
         "src/lib/heuristics.js",
         "src/lib/extract.js",
@@ -53,19 +54,20 @@
     },
     {
       "matches": [
-        "*://www.google.com/search*",
-        "*://www.google.com.hk/search*",
-        "*://www.google.com.tw/search*",
-        "*://www.bing.com/search*",
-        "*://cn.bing.com/search*",
-        "*://www.baidu.com/s*",
-        "*://www.sogou.com/web*",
-        "*://duckduckgo.com/*",
-        "*://search.brave.com/search*"
+        "*://*.google.com/search*",
+        "*://*.google.com.hk/search*",
+        "*://*.google.com.tw/search*",
+        "*://*.bing.com/search*",
+        "*://*.baidu.com/s*",
+        "*://*.baidu.com/from*",
+        "*://*.duckduckgo.com/*",
+        "*://*.search.brave.com/search*",
+        "*://*.sogou.com/web*"
       ],
       "js": [
         "src/lib/namespace.js",
         "src/lib/constants.js",
+        "src/lib/engines.js",
         "src/lib/storage.js",
         "src/lib/heuristics.js",
         "src/content/serp.js"

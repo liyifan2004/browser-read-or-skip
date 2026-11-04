@@ -4,6 +4,111 @@
 
 ---
 
+## 2026-11-04 · 第八轮：搜索引擎的单一事实源（修空窗缺陷）
+
+### 本次目标与完成情况
+
+前七轮收敛的是 CI / 发布 / 版本号链路。本轮转向**功能正确性**，找到并修掉一个
+用户可见的静默故障：搜索结果页上「既没有徽章，也没有浮层」（下称"空窗"）。
+
+### 问题证据（实测复现，不是推测）
+
+「哪些页面是搜索结果页」此前在**三处各写一遍**：
+
+| 位置 | 作用 | 缺陷 |
+| --- | --- | --- |
+| `manifest.json` `content_scripts[1].matches` | 决定 `serp.js` 会不会被注入 | 只写裸域 `duckduckgo.com` |
+| `src/lib/heuristics.js` `SEARCH_ENGINE_PATTERNS` | 决定 HUD 会不会让位 | 写 `/(^\|\.)duckduckgo\.com$/`，覆盖各级子域 |
+| `src/content/serp.js` `ENGINES[].match` | 决定 serp.js 内部认不认这个引擎 | 写 `/(^\|\.)duckduckgo\.com$/`，覆盖各级子域 |
+
+两者不一致的后果是：HUD 认为这是结果页 → **浮层让位**；但 manifest 没覆盖该主机
+→ **serp.js 没被注入** → 结果页上零反馈。实测三档主机全部中招：
+
+- `www.duckduckgo.com`
+- `html.duckduckgo.com`
+- `lite.duckduckgo.com`
+
+真实 Chromium 修复前后对照（Playwright + 本地夹具页 + `--host-resolver-rules`，
+分别加载 `git worktree` 导出的 HEAD 原始树与修复后的工作区）：
+
+```
+主机                        修复前(徽章/汇总/HUD)    修复后(徽章/汇总/HUD)
+duckduckgo.com            (1, 1, 0)              (1, 1, 0)
+www.duckduckgo.com        (0, 0, 0)   ← 空窗      (1, 1, 0)   ← 修复
+html.duckduckgo.com       (0, 0, 0)   ← 空窗      (1, 1, 0)   ← 修复
+lite.duckduckgo.com       (0, 0, 0)   ← 空窗      (1, 1, 0)   ← 修复
+```
+
+修复前那三档的 HUD 也是 0 —— 因为浮层让位了，整页什么都没有。
+
+### 方案
+
+不做"给 manifest 补三条 pattern"这种补丁（下次加引擎还会漂移），而是把
+「一个引擎长什么样」收成一份数据：
+
+- **新增 `src/lib/engines.js`** —— 搜索引擎的**单一事实源**。每个引擎一条记录：
+  `id` / `hosts`（主机后缀规则）/ `pathPrefixes`（路径前缀）/ `queryParams`
+  （查询词参数名）/ `matchPatterns`（Chrome match pattern）/ 五个 DOM 选择器。
+- **三处都从它派生**：
+  - `manifest.json` 的 matches 由 `tools/sync-engines.mjs` 生成（新增）；
+  - `heuristics.isSearchResultsPage` 改为委托 `RS.engines.isSearchResultsPage`；
+  - `serp.js` 的 `ENGINES` 改为从 `RS.engines.ENGINES` 映射而来，不再自带主机正则。
+- **新增 `tools/sync-engines.mjs --check`** 并挂进 CI —— manifest 与单一事实源
+  不一致时 CI 直接失败，漂移不可能再溜进发布。
+
+### 几个关键判断
+
+1. **host 判定比 Chrome 的 glob 更严格，是刻意的。** Chrome 的 `*.suffix`
+   同时匹配 suffix 本身与各级子域（依据 Chromium 源码
+   `extensions/common/url_pattern.cc` 的 `URLPattern::MatchesHost`），但 path
+   的 `*` 是纯 glob —— `*://*.baidu.com/s*` 会命中 `/sugrec`。而
+   `RS.engines` 是「这页是不是结果页」的**权威判定**（HUD 让位与 serp.js
+   内部识别都用它），必须精确到路径段边界：`/s` 命中，`/sugrec` 不命中。
+   manifest 的 match pattern 略宽是安全的（注入了但认不出引擎会安静退出）；
+   权威判定略宽则会让 HUD 在非结果页上让位，**反而制造空窗**。
+2. **`engines.js` 用主机后缀规则而不是 Chrome 通配符表达主机**，是因为
+   Chrome 的 match pattern 表达不了"只匹配 www."这种精确主机；用显式后缀列表
+   语义更清楚，也与 manifest 的 pattern 一一对应。
+3. **不在本轮扩大引擎范围。** 顺带核实时发现 `www.google.co.jp` 等 ccTLD 也
+   未被覆盖，但 README 与功能账簿声明的 Google 范围就是 com / com.hk / com.tw
+   三档。扩大范围属于产品决策，不在"修缺陷"范围内 —— 已作为待办记入账簿。
+   （参考：同 fleet 的 QuerySwitch 仓库已收录 Chromium 官方
+   `kGoogleConfigs` 的 220 个 Google 主机清单，需要时可直接复用。）
+
+### 实际执行的测试与结果
+
+- `npm test`：**298/298 全绿**（14.1s）。基线 282/282，新增 16 例（`15-engines`）：
+  - 单一事实源的导出面完整性、引擎 id 唯一性；
+  - manifest 的 matches 与 `engines.js` **逐条相等**（不一致即失败）；
+  - 各引擎主机/子域识别、**仿冒域名不得蹭上引擎**（`notduckduckgo.com`、
+    `duckduckgo.com.evil.io`、`evil-google.com` 等）；
+  - **防空窗回归**：凡被判定为结果页的 URL，manifest 必须覆盖；
+    **防双标注回归**：manifest 覆盖的 URL，HUD 必须让位；
+  - Chrome match pattern 语义（依据 Chromium 源码与 `url_pattern_unittest.cc`）：
+    `*.suffix` 匹配 suffix 本身与各级子域、path 的 `*` 覆盖 path+query、
+    `X/*` 额外匹配精确的 `X`。
+- `node tools/sync-engines.mjs --check`：通过（9 条 pattern）。
+- `node tools/pack.mjs --check`：通过（`src/lib/engines.js` 已在打包白名单内，
+  manifest 引用的 15 个文件均在包内）。
+- **真实浏览器验证**（Playwright + Chromium，`channel="chromium"`）：见上方
+  修复前后对照表。这是本仓库第一次有真实 Chrome 的自动化证据（对应 IMP-8）。
+
+### 遗留问题与后续建议
+
+- **百度的摘要选择器已失效**（本轮顺带发现，未修）：真实页面上
+  `.c-abstract` / `.content-right_8Zs40` / `[class*='content-right']` /
+  `.c-span-last p` **命中 0 个**，百度的摘要因此始终为空。2026 年的百度结果页
+  改用 `cos-line-clamp-*` / `summary-text_*` 一类哈希后缀的类名（每次构建都会变，
+  哈希类名不适合硬编码）—— 需要另找稳定锚点。已记入功能账簿 F-005 已知问题。
+- **IMP-8 真实浏览器验证**：本轮已用 Playwright 手动跑通（可重复的脚本在
+  `.workbuddy/scratch/`），但尚未接入 CI —— 下一步应把 e2e 冒烟固化进 CI。
+- **IMP-9 初始化异常静默吞掉**（P2，未处理）：`init().catch(() => {})` 仍是
+  "什么都没发生"类问题的温床，本轮的空窗缺陷正是它本该拦住的那类问题。
+- 下一轮建议方向：把本轮的真实浏览器 e2e 固化进 CI（IMP-8），或转向
+  MSE 那 2000 行未测 DOM 层。
+
+---
+
 ## 2026-10-23 · 第一轮：功能账簿建立 + 首批缺陷修复
 
 ### 本次目标与完成情况

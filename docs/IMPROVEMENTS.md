@@ -79,6 +79,9 @@
 | ID | 问题 | 优先级 | 关联 | 方案要点 | 验收 |
 | --- | --- | --- | --- | --- | --- |
 | IMP-8 | 真实浏览器验证缺位：全部"已验证"都是 jsdom 模拟；引擎选择器、SW 休眠唤醒、样式隔离在真实 Chrome 无自动化证据 | P2 | F-005/016/017 | 引入 Playwright/Puppeteer 冒烟：加载扩展→本地夹具页→断言徽章/HUD/缓存；引擎真实页用录制快照 | 起码一条真实浏览器冒烟进 CI |
+| IMP-18 | **百度摘要选择器已失效**：`serp.js` 的百度 `snippetSel` 四条选择器（`.c-abstract` / `.content-right_8Zs40` / `[class*='content-right']` / `.c-span-last p`）在 2026 年的真实百度页面上**命中 0 个**，百度摘要始终为空 → SERP 判定少一个重要信号 | P1 | F-005 | 重新标定百度的稳定锚点。2026 年百度结果页用 `cos-line-clamp-*` / `summary-text_15QGa` 这类**每次构建都会变的哈希类名**，不可硬编码；应改用结构锚点（如 `h3` 之后的无链接文本块、`.c-container` 内第一个非链接长文本节点） | 真实百度页面上摘要非空，且 `07-serp` 用真实结构的夹具固化该契约 |
+| IMP-19 | **Google ccTLD 覆盖不全**：只覆盖 com / com.hk / com.tw，其余 ccTLD（如 `www.google.co.jp`）结果页无徽章 | P3 | F-005 | 属**产品范围决策**而非缺陷（README 与账簿声明的就是三档）。若决定扩大，可直接复用同 fleet QuerySwitch 仓库里收录的 Chromium 官方 `kGoogleConfigs` 220 主机清单（`shared/constants.js` 的 `GOOGLE_CCDOMAINS`），加进 `engines.js` 的 `hosts` 即可 | 决策后要么补齐并写进 README，要么在 README 明说"仅支持这三档" |
+| IMP-20 | **真实浏览器 e2e 未固化进 CI**：2026-11-04 已用 Playwright + 本地夹具页 + `--host-resolver-rules` 手动跑通修复前后对照（证明 www./html./lite.duckduckgo.com 的空窗已修），但脚本在 `.workbuddy/scratch/`（不入库），CI 里没有 | P2 | F-005/016/017 | 把 e2e 脚本移到 `tests/e2e/` 并接进 CI。注意两点环境坑：① 本机装了系统代理，Chromium 会把请求交给代理，`--host-resolver-rules` 失效（**必须加 `--no-proxy-server`**）；② 扩展装载用 `channel="chromium"`（Playwright 自带 Chromium），品牌版 Chrome 已移除 `--load-extension` | CI 里有一条真实 Chrome 的冒烟，徽章/HUD/空窗三类断言都过 |
 | IMP-9 | `init().catch(() => {})` 静默吞初始化异常（README 自评「最坏的一类」） | P2 | F-001/F-014 | catch 里 `console.warn` + 记 `S.skipped="error"` 供弹窗解释 | 人为抛错时弹窗能看到原因 |
 | IMP-10 | ~~发布打包无自动化~~ **已处理（2026-11-02）** | ~~P2~~ | 发布 | `tools/pack.mjs` 白名单打包（manifest/src/icons/README/LICENSE）+ 结构自检；新增 `tests/cases/13-pack.test.mjs` 5 用例守住「密钥不进包 / manifest 引用齐全 / 无开发产物 / 体积 <1MB」 | 产出 zip 仅含运行必需文件 |
 | IMP-11 | `composite()`/`domainOf()`/`esc()` 多处重复实现（hud/popup/options/sw） | P3 | F-010 等 | 收敛进 `src/lib/`（如 `format.js`），各处引用 | 唯一实现，测试全绿 |

@@ -78,13 +78,16 @@ export function createEnv(opts = {}) {
   return { dom, win, doc: win.document, chrome, fetchCalls, pageErrors };
 }
 
-/** 按顺序注入若干 lib（默认自动带上 namespace + constants 前置） */
+/** 按顺序注入若干 lib（默认自动带上 namespace + constants + engines 前置） */
 export function loadLibs(env, names, opts = {}) {
   const files = [];
   if (opts.includeBase !== false) {
     files.push("src/lib/namespace.js");
     if (opts.withConfig) files.push("src/lib/config.example.js");
     files.push("src/lib/constants.js");
+    // engines.js 是搜索引擎列表的单一事实源；heuristics.js 依赖它。
+    // 它与 heuristics.js 一样是「所有 lib 的公共前置」，所以放进 base。
+    files.push("src/lib/engines.js");
   }
   for (const n of names) files.push(n.startsWith("src/") ? n : "src/lib/" + n);
   for (const f of files) evalRel(env.win, f);

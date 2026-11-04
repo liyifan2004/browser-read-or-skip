@@ -79,6 +79,7 @@ describe("popup / 渲染", () => {
     a.deepEqual(env.scriptSources, [
       "../lib/namespace.js",
       "../lib/constants.js",
+      "../lib/engines.js",
       "../lib/storage.js",
       "../lib/heuristics.js",
       "popup.js"

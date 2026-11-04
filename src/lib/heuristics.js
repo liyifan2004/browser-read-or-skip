@@ -252,29 +252,21 @@
 
   /**
    * 是否是搜索引擎结果页。
-   * 必须与 manifest.content_scripts[1].matches 保持一致 —— 那边负责注入标注脚本，
-   * 这边负责让浮层让位。两边不一致就会出现"既不标注也不弹浮层"的空窗。
+   *
+   * 判定委托给 RS.engines（src/lib/engines.js）——那是搜索引擎列表的**单一事实源**，
+   * manifest 的 content_scripts[1].matches 由它派生（tools/sync-engines.mjs）。
+   * 此前本文件另写了一份 SEARCH_ENGINE_PATTERNS，与 manifest 各写一遍，
+   * 结果是 www./html./lite.duckduckgo.com 上「HUD 让位但没注入标注」的空窗
+   * （详见 src/lib/engines.js 顶部注释）。
    */
-  const SEARCH_ENGINE_PATTERNS = [
-    { host: /(^|\.)www\.google\.(com|com\.hk|com\.tw)$/, path: /^\/search/ },
-    { host: /(^|\.)www\.bing\.com$/, path: /^\/search/ },
-    { host: /(^|\.)cn\.bing\.com$/, path: /^\/search/ },
-    { host: /(^|\.)www\.baidu\.com$/, path: /^\/(s|from)/ },
-    { host: /(^|\.)www\.sogou\.com$/, path: /^\/web/ },
-    { host: /(^|\.)duckduckgo\.com$/, path: /^\// },
-    { host: /(^|\.)search\.brave\.com$/, path: /^\/search/ }
-  ];
-
   function isSearchResultsPage(url) {
     if (!url) return false;
-    try {
-      const u = new URL(url);
-      const host = u.hostname.toLowerCase();
-      const path = u.pathname;
-      return SEARCH_ENGINE_PATTERNS.some((p) => p.host.test(host) && p.path.test(path));
-    } catch (e) {
+    if (!RS.engines || typeof RS.engines.isSearchResultsPage !== "function") {
+      // engines.js 未加载（理论上不该发生）时保守返回 false：宁可多弹浮层，
+      // 也不要制造「既不标注也不弹浮层」的空窗。
       return false;
     }
+    return RS.engines.isSearchResultsPage(url);
   }
 
   /**

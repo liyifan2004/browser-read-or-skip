@@ -35,70 +35,36 @@
   const THEME_DARK = "rs-dk";
   const STYLE_ID = "rs-serp-style";
 
-  const ENGINES = [
-    {
-      id: "google",
-      match: (u) => /(^|\.)google\./.test(u.hostname) && u.pathname.startsWith("/search"),
-      container: "#search, #rso, #center_col",
-      resultSel: ["div.MjjYud", "div.g", "div[jscontroller][data-hveid]"],
-      titleSel: "a h3",
-      linkSel: "a[href]",
-      snippetSel: [".VwiC3b", "[data-sncf]", ".IsZvec", "div[style*='-webkit-line-clamp']"],
-      queryParams: ["q"]
-    },
-    {
-      id: "bing",
-      match: (u) => /(^|\.)bing\.com$/.test(u.hostname) && u.pathname.startsWith("/search"),
-      container: "#b_results",
-      resultSel: ["li.b_algo"],
-      titleSel: "h2 a",
-      linkSel: "h2 a",
-      snippetSel: [".b_caption p", ".b_algoSlug", "p"],
-      queryParams: ["q"]
-    },
-    {
-      id: "baidu",
-      match: (u) => /(^|\.)baidu\.com$/.test(u.hostname) && (u.pathname.startsWith("/s") || u.pathname.startsWith("/from")),
-      container: "#content_left, .result-op, #wrapper",
-      resultSel: [".result", ".c-container"],
-      titleSel: "h3 a",
-      linkSel: "h3 a",
-      snippetSel: [".c-abstract", ".content-right_8Zs40", "[class*='content-right']", ".c-span-last p"],
-      // 百度用 wd（PC）/ word（部分入口），不是 q
-      queryParams: ["wd", "word", "q"]
-    },
-    {
-      id: "duckduckgo",
-      match: (u) => /(^|\.)duckduckgo\.com$/.test(u.hostname),
-      container: "#links, ol.react-results--main, [data-testid='mainline']",
-      resultSel: ["article[data-testid='result']", "div.result", "li.result"],
-      titleSel: "a[data-testid='result-title-a'], h2 a",
-      linkSel: "a[data-testid='result-title-a'], h2 a",
-      snippetSel: ["[data-result='snippet']", ".result__snippet"],
-      queryParams: ["q"]
-    },
-    {
-      id: "brave",
-      match: (u) => /(^|\.)search\.brave\.com$/.test(u.hostname),
-      container: "#results, main",
-      resultSel: ["div.snippet", "#results > div"],
-      titleSel: ".title",
-      linkSel: "a",
-      snippetSel: [".snippet-description", ".snippet-content"],
-      queryParams: ["q"]
-    },
-    {
-      id: "sogou",
-      match: (u) => /(^|\.)sogou\.com$/.test(u.hostname),
-      container: "#main, .results",
-      resultSel: [".vrwrap", ".rb"],
-      titleSel: "h3 a",
-      linkSel: "h3 a",
-      snippetSel: [".str_info", ".fz-mid", ".space-txt"],
-      // 搜狗用 query，不是 q
-      queryParams: ["query", "q"]
-    }
-  ];
+  /**
+   * 引擎描述表来自 src/lib/engines.js —— 搜索引擎列表的**单一事实源**。
+   * manifest 的 content_scripts[1].matches 与 heuristics.isSearchResultsPage
+   * 都从那里派生；本文件只补「怎么从 DOM 里取结果」这一层。
+   *
+   * engines.js 提供：container / resultSel / titleSel / linkSel /
+   * snippetSel / queryParams。此处把选择器数组摊平成 serp.js 原本使用的
+   * 字符串形式，保持 pickText / collectNodes 的调用形态不变。
+   */
+  function selToArray(sel) {
+    if (!sel) return [];
+    return Array.isArray(sel) ? sel : [sel];
+  }
+
+  const ENGINES = (RS.engines && RS.engines.ENGINES ? RS.engines.ENGINES : []).map(function (e) {
+    return {
+      id: e.id,
+      container: selToArray(e.container).join(", "),
+      resultSel: selToArray(e.resultSel),
+      titleSel: selToArray(e.titleSel).join(", "),
+      linkSel: selToArray(e.linkSel).join(", "),
+      snippetSel: selToArray(e.snippetSel),
+      queryParams: e.queryParams || ["q"],
+      // 引擎识别同样委托给单一事实源，避免这里再写一份主机/路径正则
+      match: function (u) {
+        const engine = RS.engines.engineForUrl(u.href);
+        return !!engine && engine.id === e.id;
+      },
+    };
+  });
 
   /**
    * 查询词按引擎各自的参数名提取（百度 wd/word、搜狗 query、其余 q）。

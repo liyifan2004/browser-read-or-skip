@@ -76,6 +76,7 @@ const RUNTIME_SRC = [
   "lib/namespace.js",
   "lib/config.example.js",
   "lib/constants.js",
+  "lib/engines.js",
   "lib/storage.js",
   "lib/heuristics.js",
   "lib/extract.js",
