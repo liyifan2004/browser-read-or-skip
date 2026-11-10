@@ -3,7 +3,7 @@
 口径：每项记录问题、影响、关联功能 ID/位置、方案、验收标准、风险、优先级与状态。优先级按实际影响定，不夸大。
 优先级定义：P0 数据丢失/严重安全/核心不可用；P1 核心缺陷或重大兼容问题；P2 收益明确的可靠性/体验/维护性改进；P3 低风险优化与探索。
 
-最近更新：2026-10-23（本轮处理见 CHANGELOG_DEV.md）。
+最近更新：2026-11-11（本轮处理见 CHANGELOG_DEV.md）。
 
 ## 本轮已处理（2026-10-23）
 
@@ -83,7 +83,7 @@
 | IMP-21 | **百度的 `summary-gap` / `content-gap` 会把发布日期混进摘要**：`[class*='summary-gap']` 取到的文本是「2025年11月6日 + 摘要正文」，`content-gap` 同理。摘要文本会原样发给模型，日期噪声会稀释语义判定 | P2 | F-005 | 已把 `summary-text`（唯一不带日期的那个）排为首选、`summary-gap` 降为次选。但**次选仍会带日期** —— 下轮可考虑取 `summary-text` 的**内层文本**而非容器文本，或对日期前缀做剥离 | 次选路径取到的文本不带日期前缀 |
 | IMP-19 | **Google ccTLD 覆盖不全**：只覆盖 com / com.hk / com.tw，其余 ccTLD（如 `www.google.co.jp`）结果页无徽章 | P3 | F-005 | 属**产品范围决策**而非缺陷（README 与账簿声明的就是三档）。若决定扩大，可直接复用同 fleet QuerySwitch 仓库里收录的 Chromium 官方 `kGoogleConfigs` 220 主机清单（`shared/constants.js` 的 `GOOGLE_CCDOMAINS`），加进 `engines.js` 的 `hosts` 即可 | 决策后要么补齐并写进 README，要么在 README 明说"仅支持这三档" |
 | IMP-20 | **真实浏览器 e2e 未固化进 CI**：2026-11-04 已用 Playwright + 本地夹具页 + `--host-resolver-rules` 手动跑通修复前后对照（证明 www./html./lite.duckduckgo.com 的空窗已修），但脚本在 `.workbuddy/scratch/`（不入库），CI 里没有 | P2 | F-005/016/017 | 把 e2e 脚本移到 `tests/e2e/` 并接进 CI。注意两点环境坑：① 本机装了系统代理，Chromium 会把请求交给代理，`--host-resolver-rules` 失效（**必须加 `--no-proxy-server`**）；② 扩展装载用 `channel="chromium"`（Playwright 自带 Chromium），品牌版 Chrome 已移除 `--load-extension` | CI 里有一条真实 Chrome 的冒烟，徽章/HUD/空窗三类断言都过 |
-| IMP-9 | `init().catch(() => {})` 静默吞初始化异常（README 自评「最坏的一类」） | P2 | F-001/F-014 | catch 里 `console.warn` + 记 `S.skipped="error"` 供弹窗解释 | 人为抛错时弹窗能看到原因 |
+| IMP-9 | ~~`init().catch(() => {})` 静默吞初始化异常~~ **已处理（2026-11-11）** | ~~P2~~ | F-001/F-010 | 反证时确认这比"吞掉"更糟：抽取抛错时异常直接逃出异步回调（Node 里整个测试进程崩掉，浏览器里是看不见的 unhandled rejection）。改为统一出口 `fail(err, showCard)`：记 `S.error`、`console.warn`、`RS_GET_HUD_STATE` 带 `error` 字段；已确定要浮层之后的失败再挂一张只写原因、不带假分数的「出错」卡片。`serp.js` 同样补日志 | 抽错时页面有原因卡片、弹窗有具体原因 + 刷新动作、控制台有日志 |
 | IMP-10 | ~~发布打包无自动化~~ **已处理（2026-11-02）** | ~~P2~~ | 发布 | `tools/pack.mjs` 白名单打包（manifest/src/icons/README/LICENSE）+ 结构自检；新增 `tests/cases/13-pack.test.mjs` 5 用例守住「密钥不进包 / manifest 引用齐全 / 无开发产物 / 体积 <1MB」 | 产出 zip 仅含运行必需文件 |
 | IMP-11 | `composite()`/`domainOf()`/`esc()` 多处重复实现（hud/popup/options/sw） | P3 | F-010 等 | 收敛进 `src/lib/`（如 `format.js`），各处引用 | 唯一实现，测试全绿 |
 | IMP-12 | 引擎选择器硬编码，改版需发版（uBlacklist SERPINFO 方向，R2） | P3 | F-005 | 引擎描述数据化（本地 JSON/常量表分离），逻辑与数据解耦 | 改选择器不动逻辑 |

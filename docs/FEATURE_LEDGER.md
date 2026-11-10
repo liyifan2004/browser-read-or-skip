@@ -40,14 +40,14 @@
 
 - **用户价值**：打开网页立刻知道「值得认真读 / 快速扫 / 可以跳过」，不用读完才知道浪费时间。
 - **触发入口**：http/https 页面加载自动挂载（`document_start` 注入，DOM 就绪后渲染）；`Alt+Shift+R` 显隐；`Esc` 收起（仅焦点/指针在浮层上时）。
-- **预期行为**：命中缓存/预判 → <20ms 出结论；否则先出「本地估算」（标注来源），DOM 就绪后抽取正文，发后台评估，模型返回后原地升级（不闪烁不跳位）。默认 9s 自动收成角标；角标可拖动（位置持久化 `rs.hud.pos`）；卡片含重新评估、暂停▾、关闭。不弹的每种原因记在 `S.skipped`（off / blocked / serp / not-readable），弹窗可解释。
-- **实现位置**：`src/content/hud.js`（mount/render/expand/evaluate/onNavigate/onKey）；依赖 `RS.extract`、`RS.heuristics`、`RS.storage`、`RS.MSG.EVALUATE`。
+- **预期行为**：命中缓存/预判 → <20ms 出结论；否则先出「本地估算」（标注来源），DOM 就绪后抽取正文，发后台评估，模型返回后原地升级（不闪烁不跳位）。默认 9s 自动收成角标；角标可拖动（位置持久化 `rs.hud.pos`）；卡片含重新评估、暂停▾、关闭。不弹的每种原因记在 `S.skipped`（off / blocked / serp / not-readable / error），弹窗可解释。启动或抽取抛错时不安静：状态里记 `S.error`，页面留一张只写原因的「出错」卡片（不借用空页面的假分数）。
+- **实现位置**：`src/content/hud.js`（mount/render/expand/evaluate/fail/onNavigate/onKey）；依赖 `RS.extract`、`RS.heuristics`、`RS.storage`、`RS.MSG.EVALUATE`。
 - **运行环境**：content script（仅 top frame，`window.__RS_HUD_LOADED__` 防重）。渲染在 Shadow DOM（`all: initial` 起手）。
 - **API 与权限**：`chrome.runtime.sendMessage`（EVALUATE / OPEN_OPTIONS）、`chrome.runtime.onMessage`（RS_TOGGLE_PANEL / RS_FORCE_REFRESH / RS_GET_HUD_STATE）、`chrome.storage.local`（设置、缓存、位置）。无新增权限。
 - **配置与数据**：`showHud`、`hudAutoCollapseMs`、`hudPosition`（预留未消费）、`enabled`；`rs.hud.pos = {left, top}`。
 - **当前状态**：已实现。
-- **验证状态**：已验证（自动）：`08-hud`（挂载条件、两阶段升级、收起、错误提示）、`11-ui-regression`（令牌、命中区、自动收起保留焦点）。已验证（手动）：历史 QA 轮次（提交 `aa3f8c7`/`57d4f86` 等），本轮未复验。
-- **已知问题**：① `init().catch(() => {})` 吞掉一切初始化异常，异常时用户只看到「什么都没发生」（README 已把这类列为最坏缺陷，但仍未留痕）；② SPA 导航检测用 1.2s 轮询 `location.href`（非事件驱动，轻量但常驻）；③ 导航后 `evaluate(true)` 强制绕缓存，与「force=重新评估」语义冲突，多花调用（本轮已改，见 CHANGELOG_DEV）。
+- **验证状态**：已验证（自动）：`08-hud`（挂载条件、两阶段升级、收起、错误提示）、`17-boot-failure`（抽取抛错→卡片带原因、读设置抛错→不挂浮层但状态留痕）、`11-ui-regression`（令牌、命中区、自动收起保留焦点）。已验证（手动）：历史 QA 轮次（提交 `aa3f8c7`/`57d4f86` 等），本轮未复验。
+- **已知问题**：① ~~`init().catch(() => {})` 吞掉一切初始化异常~~ **已修（2026-11-11）**：`fail()` 统一出口，记 `S.error` + 控制台日志 + 页面卡片；② SPA 导航检测用 1.2s 轮询 `location.href`（非事件驱动，轻量但常驻）；③ 导航后 `evaluate(true)` 强制绕缓存，与「force=重新评估」语义冲突，多花调用（本轮已改，见 CHANGELOG_DEV）。
 - **关联关系**：F-002（初判）、F-003（正文）、F-004（评估）、F-006（缓存）、F-012（屏蔽/暂停）、F-015（消息）。
 
 ## F-002 本地启发式初判
@@ -166,7 +166,7 @@
 
 - **用户价值**：一眼看当前页结论与「为什么没弹」，并能立即补救（重评/解封/恢复/关浮层）。
 - **触发入口**：工具栏图标点击。
-- **预期行为**：读设置 → 显示 HUD/搜索标注开关 → 查当前 tab 的 `RS_GET_HUD_STATE` → 有结果渲染判定卡（指标/警告/芯片/元信息）；无结果按 skipped 原因给两句式解释 + 可执行动作；黑名单站点给「解除屏蔽」；暂停站点给「恢复评估」；「重新评估」发 `RS_FORCE_REFRESH` 后关窗。底部统计行（已评估页数、建议跳过、缓存条数）。
+- **预期行为**：读设置 → 显示 HUD/搜索标注开关 → 查当前 tab 的 `RS_GET_HUD_STATE` → 有结果渲染判定卡（指标/警告/芯片/元信息）；无结果按 skipped 原因给两句式解释 + 可执行动作（含 `error`：浮层启动失败时显示具体原因 + 刷新重试）；黑名单站点给「解除屏蔽」；暂停站点给「恢复评估」；「重新评估」发 `RS_FORCE_REFRESH` 后关窗。底部统计行（已评估页数、建议跳过、缓存条数）。
 - **实现位置**：`src/popup/popup.js` + `popup.html` + `popup.css`。
 - **运行环境**：扩展页（popup）。
 - **API 与权限**：`chrome.tabs.query/sendMessage`（activeTab）、`chrome.runtime.openOptionsPage`、`chrome.storage.local`。
