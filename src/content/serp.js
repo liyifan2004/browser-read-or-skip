@@ -171,7 +171,10 @@
     summaryEl: null
   };
 
-  init().catch(() => {});
+  init().catch((err) => {
+    // 这里失败的表现只是"结果页没有标注"，没有任何可见线索，所以至少留一行日志。
+    console.warn("[Read or Skip] 结果页标注初始化失败：", err);
+  });
 
   async function init() {
     S.settings = await RS.storage.getSettings();

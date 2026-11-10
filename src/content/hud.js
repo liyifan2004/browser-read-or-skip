@@ -34,6 +34,7 @@
     busy: false,
     localElapsed: 0,
     skipped: null,
+    error: null,
     hover: false,
     bootAt: performance.now()
   };
@@ -227,7 +228,7 @@
 
   /* ================= 启动 ================= */
 
-  init().catch(() => {});
+  init().catch((err) => fail(err, false));
 
   async function init() {
     S.settings = await RS.storage.getSettings();
@@ -278,20 +279,58 @@
     }
 
     whenReady(async () => {
-      const t0 = performance.now();
-      S.page = RS.extract.page();
-      S.localElapsed = Math.round(performance.now() - t0);
+      try {
+        const t0 = performance.now();
+        S.page = RS.extract.page();
+        S.localElapsed = Math.round(performance.now() - t0);
 
-      if (!S.mounted) {
-        const h = RS.heuristics.scorePage(S.page, S.settings);
-        S.result = h;
-        mount(true);
-      } else if (!S.result || S.result.source === "partial") {
-        // 已有预判，先保留，等模型结果
+        if (!S.mounted) {
+          const h = RS.heuristics.scorePage(S.page, S.settings);
+          S.result = h;
+          mount(true);
+        } else if (!S.result || S.result.source === "partial") {
+          // 已有预判，先保留，等模型结果
+        }
+
+        await evaluate();
+      } catch (err) {
+        fail(err, true);
       }
-
-      await evaluate();
     });
+  }
+
+  /**
+   * 启动或抽取失败时的唯一出口。
+   *
+   * 以前这里是 `init().catch(() => {})` 加一个没有 try 的异步回调：只要
+   * extract / scorePage 抛一次错，就是 promise 静默 rejection —— 页面上什么
+   * 都不出现，控制台没有一行日志，弹窗只会说「页面还没就绪」。用户和作者
+   * 都无从判断发生了什么。
+   *
+   * @param {*} err
+   * @param {boolean} showCard - 读设置阶段失败时不知道用户要不要浮层，不挂卡片，
+   *   只在弹窗里说明；已经确定要浮层之后失败，才在页面上留一张带原因的卡片。
+   */
+  function fail(err, showCard) {
+    const message = (err && err.message) || String(err);
+    S.skipped = "error";
+    S.error = message;
+    console.warn("[Read or Skip] 浮层初始化失败：", err);
+    if (!showCard) return;
+    try {
+      mount(true);
+      if (!S.card) return;
+      // 只写原因，不借用启发式打分 —— 空页面算出来的分数是假数字。
+      S.card.innerHTML =
+        '<div class="warn err">' + ICON.warn + "<span>浮层没能启动：" + esc(message) + "</span></div>";
+      const label = S.wrap.querySelector(".plabel");
+      if (label) label.textContent = "出错";
+      const score = S.wrap.querySelector(".pscore");
+      if (score) score.textContent = "";
+      expand(true);
+    } catch (inner) {
+      console.warn("[Read or Skip] 错误卡片也没能渲染：", inner);
+    }
   }
 
   /* ================= 评估 ================= */
@@ -857,6 +896,7 @@
         mounted: S.mounted,
         expanded: S.expanded,
         skipped: S.skipped || null,
+        error: S.error || null,
         result: S.result,
         page: S.page ? { title: S.page.title, domain: S.page.domain, charCount: S.page.charCount } : null
       });

@@ -50,6 +50,13 @@
       showUnsupported("站点已跳过评估", "此站点已跳过评估，浮层不再出现。下方「恢复评估 / 解除屏蔽」可随时恢复。");
     } else if (res.skipped === "not-readable") {
       showUnsupported("不是可读页面", "这不是一个可读的正文页（可能是应用页、登录页或非 HTML 内容）。");
+    } else if (res.skipped === "error") {
+      // 初始化抛错时，页面上只会有一张「出错」卡片。这里补上原因和下一步，
+      // 否则用户看到的是一个说不清为什么存在的红条。
+      showUnsupported(
+        "浮层没能启动",
+        res.error ? `原因：${res.error}。刷新页面可重试。` : "刷新页面可重试。"
+      );
     } else if (!res.result) {
       showUnsupported("页面还没就绪", "页面已就绪，但还没有产生判定结果。点下方「重新评估」试试。");
     } else {
