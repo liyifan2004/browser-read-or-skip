@@ -318,19 +318,46 @@
     console.warn("[Read or Skip] 浮层初始化失败：", err);
     if (!showCard) return;
     try {
-      mount(true);
-      if (!S.card) return;
-      // 只写原因，不借用启发式打分 —— 空页面算出来的分数是假数字。
-      S.card.innerHTML =
-        '<div class="warn err">' + ICON.warn + "<span>浮层没能启动：" + esc(message) + "</span></div>";
-      const label = S.wrap.querySelector(".plabel");
-      if (label) label.textContent = "出错";
-      const score = S.wrap.querySelector(".pscore");
-      if (score) score.textContent = "";
-      expand(true);
+      renderFailure({ code: "INIT", message: "浮层没能启动：" + message });
     } catch (inner) {
       console.warn("[Read or Skip] 错误卡片也没能渲染：", inner);
     }
+  }
+
+  /**
+   * 错误条：只写原因。NO_KEY 时附带一个直达设置页的入口。
+   */
+  function errorBox(err) {
+    const needKey = err && err.code === "NO_KEY";
+    const box = document.createElement("div");
+    box.className = "warn err";
+    box.innerHTML =
+      ICON.warn +
+      "<span>" + esc((err && err.message) || "评估失败") +
+      (needKey ? ' <span class="fix" data-act="options">前往设置填写 API Key →</span>' : "") +
+      "</span>";
+    box.querySelectorAll("[data-act='options']").forEach((el) =>
+      el.addEventListener("click", () => chrome.runtime.sendMessage({ type: RS.MSG.OPEN_OPTIONS }))
+    );
+    return box;
+  }
+
+  /**
+   * 没有可用正文时的失败卡片：角标写「出错」、分数清空、卡片只放原因。
+   *
+   * 这里刻意不算启发式分数 —— 空页面算出来的分数是假数字，把它和错误提示画在
+   * 一起，用户会以为那是这页的判定结果。
+   */
+  function renderFailure(err) {
+    if (!S.mounted) mount(true);
+    if (!S.card) return;
+    const label = S.wrap.querySelector(".plabel");
+    if (label) label.textContent = "出错";
+    const score = S.wrap.querySelector(".pscore");
+    if (score) score.textContent = "";
+    S.card.textContent = "";
+    S.card.appendChild(errorBox(err));
+    expand(true);
   }
 
   /* ================= 评估 ================= */
@@ -587,25 +614,22 @@
   }
 
   function renderError(err) {
-    if (!S.mounted) return;
-    const r = S.result || RS.heuristics.scorePage(S.page || { url: location.href, text: "" }, S.settings);
+    // 拿不到正文就没有判定依据。原先这里会拿空页面算一份启发式分数画在错误
+    // 提示旁，等于把"没有数据"显示成一个具体结论；现在只报原因。
+    if (!S.mounted || !S.page || !S.page.text) {
+      renderFailure(err);
+      return;
+    }
+    const r = S.result || RS.heuristics.scorePage(S.page, S.settings);
     S.result = r;
     render();
     if (!S.expanded) expand(true);
     const head = S.card.querySelector(".head");
-    if (!head) return;
-    const box = document.createElement("div");
-    box.className = "warn err";
-    const needKey = err.code === "NO_KEY";
-    box.innerHTML =
-      ICON.warn +
-      "<span>" + esc(err.message || "评估失败") +
-      (needKey ? ' <span class="fix" data-act="options">前往设置填写 API Key →</span>' : "") +
-      "</span>";
-    head.insertAdjacentElement("afterend", box);
-    box.querySelectorAll("[data-act='options']").forEach((el) =>
-      el.addEventListener("click", () => chrome.runtime.sendMessage({ type: RS.MSG.OPEN_OPTIONS }))
-    );
+    if (!head) {
+      renderFailure(err);
+      return;
+    }
+    head.insertAdjacentElement("afterend", errorBox(err));
     const tag = S.card.querySelector(".src");
     if (tag) tag.textContent = "失败";
   }
@@ -658,10 +682,12 @@
 
   function footMeta(r) {
     const bits = [];
-    if (r.elapsedMs) bits.push("耗时 " + r.elapsedMs + "ms");
+    // 数值字段不能用真值判断：抽取/评估足够快时耗时就是 0，`if (r.elapsedMs)`
+    // 会让"耗时"整段凭空消失，而且消失与否取决于那次运行是不是恰好 0ms。
+    if (r.elapsedMs != null) bits.push("耗时 " + r.elapsedMs + "ms");
     else if (r.source === "cache") bits.push("来自缓存");
     else if (r.source === "partial") bits.push("来自搜索结果预判");
-    else if (r.source === "heuristic" && S.localElapsed) bits.push("本地 " + S.localElapsed + "ms");
+    else if (r.source === "heuristic" && S.localElapsed != null) bits.push("本地 " + S.localElapsed + "ms");
     if (S.page && S.page.charCount) bits.push(S.page.charCount.toLocaleString("zh-CN") + " 字");
     const d = S.page && S.page.domain;
     if (d) bits.push(d);

@@ -1,6 +1,6 @@
 {
   "name": "read-or-skip",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "private": true,
   "description": "浏览器扩展：打开网页即刻判断「值得认真读 / 快速扫 / 可以跳过」，并标注相关度、新信息程度、阅读价值与信息可信度。由 TypeSafe Jev 决策模型驱动。",
   "license": "MIT",

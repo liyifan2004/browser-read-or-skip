@@ -17,6 +17,25 @@ function articleHtml() {
   return "<!doctype html><html lang='zh-CN'><head><title>一篇足够长的文章</title></head><body><article><p>" + LONG_CN + "</p></article></body></html>";
 }
 
+function modelResult() {
+  return {
+    kind: "page",
+    verdict: "read",
+    relevance: 94,
+    novelty: 78,
+    credibility: 88,
+    value: "high",
+    valueKey: "high",
+    contentType: "tutorial",
+    contentTypeKey: "tutorial",
+    source: "jev",
+    model: "jev-1.13.0",
+    reason: "内容新且来源可信。",
+    elapsedMs: 380,
+    at: Date.now()
+  };
+}
+
 function shadow(env) {
   const host = env.doc.getElementById("read-or-skip-host");
   return host ? host.shadowRoot : null;
@@ -72,6 +91,39 @@ describe("hud / 启动失败", () => {
     a.equal(st.skipped, "error");
     a.includes(st.error, "存储读不了");
     a.equal(env.pageErrors.length, 0);
+  });
+
+  it("已有缓存、正文却抽不出来时，重新评估不给分数（空页面的分数是假的）", async () => {
+    const url = "https://example.com/post/cached-but-unreadable";
+    const env = createEnv({
+      url,
+      html: articleHtml(),
+      chromeOpts: {
+        store: { "rs.cache": { [url]: { result: modelResult(), at: Date.now() } } },
+        onRuntimeSendMessage: () => Promise.resolve({ ok: true, result: modelResult() })
+      }
+    });
+    loadContentScript(env, 0);
+    // 缓存先把浮层挂起来（此时 S.page 还是 null），抽取一律失败
+    env.win.RS.extract.page = () => {
+      throw new Error("抽取失败");
+    };
+
+    // 缓存会先把浮层挂起来并画出缓存结论；等抽取失败把状态改成「出错」再断言
+    await waitFor(() => {
+      const root = shadow(env);
+      return root && root.querySelector(".plabel") && root.querySelector(".plabel").textContent === "出错";
+    }, { label: "错误卡片" });
+    a.equal(shadow(env).querySelector(".pscore").textContent, "", "启动失败时没有分数");
+
+    await dispatch(env.chrome.__listeners.message, { type: "RS_FORCE_REFRESH" }, {});
+    await sleep(150);
+
+    const root = shadow(env);
+    a.equal(root.querySelector(".pscore").textContent, "", "重新评估失败后仍不该给分数");
+    a.equal(root.querySelector(".plabel").textContent, "出错");
+    a.includes(root.querySelector(".card").innerHTML, "抽取失败", "卡片要留下原因");
+    a.equal(env.chrome.__log.runtimeSendMessage.length, 0, "没有正文就不该发评估请求");
   });
 });
 

@@ -46,7 +46,7 @@
 - **API 与权限**：`chrome.runtime.sendMessage`（EVALUATE / OPEN_OPTIONS）、`chrome.runtime.onMessage`（RS_TOGGLE_PANEL / RS_FORCE_REFRESH / RS_GET_HUD_STATE）、`chrome.storage.local`（设置、缓存、位置）。无新增权限。
 - **配置与数据**：`showHud`、`hudAutoCollapseMs`、`hudPosition`（预留未消费）、`enabled`；`rs.hud.pos = {left, top}`。
 - **当前状态**：已实现。
-- **验证状态**：已验证（自动）：`08-hud`（挂载条件、两阶段升级、收起、错误提示）、`17-boot-failure`（抽取抛错→卡片带原因、读设置抛错→不挂浮层但状态留痕）、`11-ui-regression`（令牌、命中区、自动收起保留焦点）。已验证（手动）：历史 QA 轮次（提交 `aa3f8c7`/`57d4f86` 等），本轮未复验。
+- **验证状态**：已验证（自动）：`08-hud`（挂载条件、两阶段升级、收起、错误提示）、`17-boot-failure`（抽取抛错→卡片带原因、读设置抛错→不挂浮层但状态留痕、缓存已挂但正文抽不出来→重评不给分数）、`18-footmeta`（耗时恰为 0ms 仍显示）、`11-ui-regression`（令牌、命中区、自动收起保留焦点）。已验证（手动）：历史 QA 轮次（提交 `aa3f8c7`/`57d4f86` 等），本轮未复验。
 - **已知问题**：① ~~`init().catch(() => {})` 吞掉一切初始化异常~~ **已修（2026-11-11）**：`fail()` 统一出口，记 `S.error` + 控制台日志 + 页面卡片；② SPA 导航检测用 1.2s 轮询 `location.href`（非事件驱动，轻量但常驻）；③ 导航后 `evaluate(true)` 强制绕缓存，与「force=重新评估」语义冲突，多花调用（本轮已改，见 CHANGELOG_DEV）。
 - **关联关系**：F-002（初判）、F-003（正文）、F-004（评估）、F-006（缓存）、F-012（屏蔽/暂停）、F-015（消息）。
 

@@ -90,7 +90,12 @@ async function waitModel(env) {
   await waitFor(
     () => {
       const root = shadow(env);
-      return root && root.querySelector(".plabel") && root.querySelector(".plabel").textContent === "值得读";
+      if (!root) return false;
+      const label = root.querySelector(".plabel");
+      const card = root.querySelector(".card");
+      // 角标和卡片在同一次 render() 里写入。只看角标曾经读到过半张卡（实测偶发：
+      // 8 次跑失败 1 次），所以要求卡片也已经画出 .head 才认为落地。
+      return !!label && label.textContent === "值得读" && !!card && !!card.querySelector(".head");
     },
     { label: "模型结论落地" }
   );

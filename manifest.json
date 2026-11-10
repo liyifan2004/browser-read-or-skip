@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Read or Skip — 值得读吗",
   "short_name": "Read or Skip",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "网页打开即刻判断：值得认真读 / 快速扫 / 可以跳过。并标注相关度、新信息程度、阅读价值与可信度。由 TypeSafe Jev 决策模型驱动。",
   "minimum_chrome_version": "116",
 

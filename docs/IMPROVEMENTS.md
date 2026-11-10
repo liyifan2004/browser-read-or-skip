@@ -93,6 +93,8 @@
 | IMP-16 | 设置无导入/导出，换机/重装丢配置（含黑名单与主题） | P3 | F-011 | 导出/导入 JSON（注意不含 apiKey 或显式确认） | 一键迁移 |
 | IMP-17 | Tarnish 类静态安全扫描未跑（R5） | P3 | 安全 | 安装并跑一次，输出告警清单 | 告警逐条定级 |
 | IMP-22 | ~~`hud.js` 的 `srcLabel()` 未转义 → HTML 注入~~ **已处理（2026-11-04）** | ~~P1~~ | F-005/010 | `r.model` 来自**远端 API 响应**（service-worker.js 把 `resp.model` 原样透传），被 `srcLabel()` 原样拼进 `S.card.innerHTML`。浮层注入在**用户访问的页面**里，这是真实 XSS 通道。同时修 `popup.js` 的 contentType 回退分支。新增 `tests/cases/16-xss-escaping.test.mjs`（5 例，DOM 级断言 + 反证验证） | 载荷只作为纯文本显示，DOM 结构与干净渲染逐标签一致 |
+| IMP-23 | ~~`footMeta()` 用真值判断数值字段，`elapsedMs` 恰为 0 时「耗时」整段消失（`S.localElapsed` 同病）~~ **已处理（2026-11-11）** | ~~P2~~ | F-001 | 由 `16-xss-escaping` 的偶发失败暴露出：差异只有「SPAN 28 vs 29」，追到 `.sep` 少一个，再追到 footMeta 少一段 —— 抽取与评估够快时耗时就是 0，`if (r.elapsedMs)` 判假。改为 `!= null`；新增 `18-footmeta.test.mjs`（冻结时钟让耗时恰为 0） | 0ms 时仍显示「耗时 0ms」；16 的基线用例不再抖动 |
+| IMP-24 | ~~`renderError()` 在没有正文时用空页面算一份启发式分数，与错误提示并排显示~~ **已处理（2026-11-11）** | ~~P2~~ | F-001/010 | 有正文时（IPC 失败、NO_KEY）那分数是真文章的，保留；没正文时是假数字，去掉。抽出 `renderFailure()`（与 `fail()` 共用）与 `errorBox()` | 抽取失败后重新评估：角标「出错」、无分数、卡片留原因 |
 
 ## 安全与权限审查结论（2026-10-23）
 
