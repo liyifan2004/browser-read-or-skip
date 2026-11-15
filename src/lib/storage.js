@@ -147,7 +147,83 @@
       ? (settings && settings.partialCacheTtlMs) || RS.DEFAULT_SETTINGS.partialCacheTtlMs
       : (settings && settings.cacheTtlMs) || RS.DEFAULT_SETTINGS.cacheTtlMs;
     if (Date.now() - (entry.at || 0) > ttl) return null;
-    return entry;
+    // 缓存条目的字段**必须**校验：rs.cache 里可能存着旧版本写下的结构，
+    // 或者被外部写坏。这些值会被原样渲染到页面上（浮层注入在用户页面里），
+    // 所以「读取时归一化」是最后一道防线 —— 与设置层用 coerceSettings
+    // 是同一个道理：类型不对就退回默认值，绝不把脏数据往上抛。
+    return { ...entry, result: coerceResult(entry.result) };
+  }
+
+  /**
+   * 结果对象的字段清单 —— 缓存读出的**白名单**。
+   *
+   * 思路与 coerceSettings 不同。coerceSettings 按类型逐类校正，好处是新字段
+   * 自动被覆盖；这里必须按名单，因为缓存里可能是旧版本写下的任意结构，
+   * 「不认识的字段」没有默认值可退回，只能丢掉。
+   *
+   * 名单遗漏的代价是**功能 bug**（新字段读缓存后消失），不是安全问题，
+   * 所以配了一条自维护的用例：`Object.keys(normalizePage(...))` 必须全部在
+   * 本表里。新增字段忘了登记，测试会直接失败（见 21-schema-and-errors）。
+   */
+  const RESULT_SCHEMA = {
+    kind: "text",
+    verdict: "text",
+    value: "text",
+    valueKey: "text",
+    contentType: "text",
+    contentTypeKey: "text",
+    warning: "text",
+    source: "text",
+    model: "text",
+    reason: "text",
+    relevance: "num",
+    novelty: "num",
+    credibility: "num",
+    timelessness: "num",
+    intentMatch: "num",
+    confidence: "num",
+    redundancy: "num",
+    at: "num",
+    readingMinutes: "int",
+    lowConfidence: "bool",
+    partial: "bool",
+    usage: "usage"
+  };
+
+  /** 只保留数值型的键值（usage 这类嵌套对象用）。 */
+  function numericOnly(obj) {
+    const out = {};
+    for (const [k, v] of Object.entries(obj)) {
+      if (typeof v === "number" && Number.isFinite(v)) out[k] = v;
+    }
+    return out;
+  }
+
+  /**
+   * 把缓存里的结果对象整形成**安全可渲染**的形状。
+   *
+   * 白名单：不在 RESULT_SCHEMA 里的字段一律丢弃 —— 旧缓存、被外部写坏的数据，
+   * 都进不了渲染层。类型不对的字段置 null，由渲染层兜底。
+   */
+  function coerceResult(result) {
+    if (!result || typeof result !== "object") return null;
+    const out = {};
+    for (const [key, kind] of Object.entries(RESULT_SCHEMA)) {
+      if (!(key in result)) continue;
+      const v = result[key];
+      if (kind === "num") {
+        out[key] = typeof v === "number" && Number.isFinite(v) ? v : null;
+      } else if (kind === "int") {
+        out[key] = typeof v === "number" && Number.isFinite(v) ? Math.round(v) : null;
+      } else if (kind === "text") {
+        out[key] = typeof v === "string" ? v : null;
+      } else if (kind === "bool") {
+        out[key] = typeof v === "boolean" ? v : null;
+      } else if (kind === "usage") {
+        out[key] = v && typeof v === "object" ? numericOnly(v) : null;
+      }
+    }
+    return out;
   }
 
   /**

@@ -41,12 +41,22 @@
     }
 
     if (!res || !res.ok) {
-      // 两句结构：先说状态，再给可执行动作
-      const internal =
-        tab && tab.url && /^(chrome|edge|about|chrome-extension|devtools):/i.test(tab.url);
+      // 为什么按「可注入的协议」判断，而不是列出各家的内部页面：
+      //
+      // 原来是一张黑名单 `/^(chrome|edge|about|chrome-extension|devtools):/`，
+      // 于是 brave:// / opera:// / vivaldi:// / view-source: / file:// 都被
+      // 归成「页面还没就绪」，提示用户「刷新后重试」—— 刷一万次也不会变。
+      //
+      // 扩展只往 http/https 注入（见 manifest 的 content_scripts.matches），
+      // 所以「可注入」本身就是一个白名单：不在里面的协议一律是内部页面。
+      // 换浏览器、加新协议都不用改这里。
+      const url = (tab && tab.url) || "";
+      const injectable = /^https?:/i.test(url);
       showUnsupported(
-        internal ? "浏览器内部页面" : "页面还没就绪",
-        internal ? "内部页面不允许扩展注入脚本。" : "刷新后重试。"
+        injectable ? "页面还没就绪" : "浏览器内部页面",
+        injectable
+          ? "扩展可能刚安装或刚更新，页面还没加载它。刷新后重试。"
+          : "内部页面、本地文件与扩展页都不允许扩展注入脚本。换个网页再试。"
       );
     } else if (res.skipped === "serp") {
       showUnsupported("搜索结果页", "等级与可信度已经直接标在每条结果上，不再弹浮层。");

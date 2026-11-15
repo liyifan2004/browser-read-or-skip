@@ -48,6 +48,70 @@ function loadStorageOnly(opts = {}) {
   return env;
 }
 
+describe("缓存读出的字段白名单 / 新增字段必须登记", () => {
+	/** 起一个只装了 lib 的环境，拿真实的 normalize 函数产出结果 */
+	function loadLibEnv() {
+		const env = createEnv({ url: "https://read-or-skip.test/", chromeOpts: {} });
+		loadLibs(env, ["jev.js", "questions.js", "storage.js"], { includeBase: true });
+		return env;
+	}
+
+	it("normalizePage 产出的每个字段都能穿过缓存往返", async () => {
+		// 这条断言的作用不是「测某个字段」，而是**守住白名单的完整性**：
+		// 以后往 normalizePage 里加字段、忘了登记 RESULT_SCHEMA，
+		// 那个字段会在读缓存时被丢掉，这条用例就会失败。
+		// 清单不需要手写 —— 它从 normalizePage 的真实输出生成，
+		// 所以「新增字段自动进入覆盖范围」。
+		const env = loadLibEnv();
+		const RS = env.win.RS;
+		const result = RS.questions.normalizePage({}, { model: "test-model", usage: { input_tokens: 100, output_tokens: 20 } });
+		const url = "https://example.com/post/roundtrip-page";
+		await RS.storage.putCacheEntry(url, result, { title: "t" });
+		const entry = await RS.storage.getCacheEntry(url, {});
+		a.ok(entry, "缓存条目应被读到");
+		a.deepEqual(
+			Object.keys(entry.result).sort(),
+			Object.keys(result).sort(),
+			"字段集合必须一致；少了某个字段说明它没登记进 RESULT_SCHEMA"
+		);
+	});
+
+	it("normalizeSerp 产出的每个字段都能穿过缓存往返", async () => {
+		const env = loadLibEnv();
+		const RS = env.win.RS;
+		const result = RS.questions.normalizeSerp({}, { model: "test-model" });
+		const url = "https://www.google.com/search?q=roundtrip";
+		await RS.storage.putCacheEntry(url, result, {});
+		const entry = await RS.storage.getCacheEntry(url, {});
+		a.ok(entry, "缓存条目应被读到");
+		a.deepEqual(Object.keys(entry.result).sort(), Object.keys(result).sort());
+	});
+
+	it("白名单外的字段被丢弃，且嵌套对象的非数值也被清掉", async () => {
+		const env = loadLibEnv();
+		const RS = env.win.RS;
+		const url = "https://example.com/post/unknown";
+		await RS.storage.putCacheEntry(
+			url,
+			{
+				kind: "page",
+				verdict: "read",
+				relevance: 90,
+				reason: "理由",
+				brandNewField: '<img src="x">',
+				usage: { input_tokens: 100, weird: '<img src="x">' }
+			},
+			{}
+		);
+		const entry = await RS.storage.getCacheEntry(url, {});
+		a.equal(entry.result.brandNewField, undefined, "白名单外的字段必须丢弃");
+		a.equal(entry.result.usage.weird, undefined, "usage 里的非数值必须清掉");
+		a.equal(entry.result.usage.input_tokens, 100, "usage 里的数值要保留");
+		// 类型不对的已知字段置 null，而不是原样透出
+		a.equal(entry.result.relevance, 90, "合法数值保留");
+	});
+});
+
 describe("存储 schema / 脏数据不得让设置页打不开", () => {
   it("siteBlocklist 是字符串时退回数组，不抛异常", async () => {
     const env = loadStorageOnly({ store: { "rs.settings": { siteBlocklist: "abc" } } });
@@ -149,4 +213,45 @@ describe("失败出口 / 每一个都要留下可读原因", () => {
     const stored = env.chrome.__store["rs.settings"];
     a.deepEqual(stored.siteBlocklist, ["a.com", "b.com"], "空行与空白项必须被过滤掉");
   });
+});
+
+describe("弹窗 / 不可注入页面的判定", () => {
+	/** 让 sendMessage 报「没有接收方」—— 这正是内容脚本不存在时的真实错误 */
+	const noReceiver = () =>
+		Promise.reject(new Error("Could not establish connection. Receiving end does not exist."));
+
+	async function titleFor(url) {
+		const env = loadPage("src/popup/popup.html", {
+			tabs: [{ id: 1, active: true, url }],
+			onTabsSendMessage: noReceiver
+		});
+		await popupReady(env);
+		return { title: env.doc.getElementById("utitle").textContent, desc: env.doc.getElementById("udesc").textContent };
+	}
+
+	it("所有非 http(s) 协议都判成内部页面，而不是让用户去刷新", async () => {
+		// 这条断言的清单故意包含**当前代码不认识的**协议（vivaldi / chromium /
+		// view-source / file / ftp / data / blob / about）。判据不是「认识这几个」，
+		// 而是「凡不是 http(s) 的一律不可注入」—— 换浏览器不需要改代码。
+		const nonInjectable = [
+			"chrome://settings", "edge://settings", "brave://settings", "opera://about",
+			"vivaldi://settings", "chromium://version", "about:blank", "devtools://devtools/x",
+			"view-source:https://example.com/", "file:///C:/tmp/a.html",
+			"ftp://example.com/a", "data:text/html,<p>x", "blob:https://example.com/uuid",
+			"chrome-extension://abcdefghijklmnop/popup.html", "about:newtab"
+		];
+		for (const url of nonInjectable) {
+			const { title, desc } = await titleFor(url);
+			a.equal(title, "浏览器内部页面", url + " 应判成内部页面");
+			a.notIncludes(desc, "刷新后重试", url + " 不该让用户去刷新");
+		}
+	});
+
+	it("http(s) 页面没有接收方时，才提示刷新", async () => {
+		for (const url of ["https://example.com/a", "http://example.com/a"]) {
+			const { title, desc } = await titleFor(url);
+			a.equal(title, "页面还没就绪", url + " 应判成页面未就绪");
+			a.includes(desc, "刷新", url + " 应给出刷新这条可执行的动作");
+		}
+	});
 });

@@ -156,20 +156,44 @@ describe("转义契约 / 载荷清单自动生成", () => {
   });
 
   it("缓存里的旧结果同样不得注入元素节点", async () => {
-    // 缓存路径不做字段白名单校验，老版本写入的值会被原样渲染。
+    // 真正走缓存读取路径，而不是把 source 改成 "cache" 就算数 ——
+    // 后者根本没碰 getCacheEntry，测不到「缓存层是否校验字段」。
+    // 这里直接调存储层的 getCacheEntry，喂一份脏数据。
     const env = createEnv({
       url: "https://example.com/post/cache",
       html: articleHtml(),
       chromeOpts: {
-        onRuntimeSendMessage: () =>
-          Promise.resolve({
-            ok: true,
-            result: modelResult({ source: "cache", readingMinutes: '9<img src="https://evil.example/p.png">' })
-          })
-      }
+        store: {
+          "rs.cache": {
+            "https://example.com/post/cache": {
+              at: Date.now(),
+              title: "缓存的标题",
+              partial: false,
+              result: {
+                kind: "page",
+                verdict: "read",
+                relevance: 94,
+                readingMinutes: '9<img src="https://evil.example/p.png">',
+                reason: "缓存里的理由",
+                source: "jev",
+                unknownStringField: '9<img src="https://evil.example/p.png">',
+              },
+            },
+          },
+        },
+      },
     });
     loadContentScript(env, 0);
     await waitFor(() => shadow(env) && shadow(env).querySelector(".plabel"), { label: "浮层挂载" });
+
+    // 存储层读取时必须把非法 readingMinutes 归一化掉：白名单里它是数字型，
+    // 非数字一律置 null（渲染层见 null 就不画这条 chip）
+    const entry = await env.win.RS.storage.getCacheEntry("https://example.com/post/cache", {});
+    a.ok(entry, "缓存条目应该被读到");
+    a.equal(entry.result.readingMinutes, null, "非数字的 readingMinutes 必须置 null");
+    // 白名单之外的字段一律丢弃 —— 旧缓存里可能有任意结构
+    a.equal(entry.result.unknownStringField, undefined, "白名单外的字段必须丢弃");
+    // 而且渲染层拿到的东西也不该是元素节点
     a.equal(shadow(env).querySelectorAll("img").length, 0, "缓存路径也不得注入元素节点");
   });
 

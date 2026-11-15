@@ -60,6 +60,49 @@ function modelResult(over = {}) {
   );
 }
 
+/**
+ * 把载荷塞进结果的**每一个**字段。
+ *
+ * 清单从对象的键自动生成，而不是手写 —— 见下面那条用例的注释。
+ * 嵌套对象（usage）也一并替换。
+ *
+ * 例外：**枚举字段与布尔字段**不塞载荷。
+ *
+ * - 枚举字段（verdict / value / valueKey / contentType / contentTypeKey /
+ *   source / kind / warning）不是「字符串」而是「取值集合」，渲染层用
+ *   查表 + 回退处理（查不到就退回 unknown）。塞载荷反而会改变渲染路径本身 ——
+ *   那测的是「查表失败怎么办」，不是「字符串有没有转义」。
+ * - 布尔字段（lowConfidence）是被**派生**出来的（`confidence < 0.45`），
+ *   把它塞成字符串会凭空打开「置信度偏低」那条分支，测到的又是另一回事。
+ *
+ * 其余字段（尤其是会直接拼进 innerHTML 的那些）全部塞载荷。
+ */
+const ENUM_FIELDS = new Set([
+  "verdict",
+  "value",
+  "valueKey",
+  "contentType",
+  "contentTypeKey",
+  "source",
+  "kind",
+  "warning",
+  "lowConfidence",
+]);
+
+function payloadEveryField(result, payload) {
+  const out = {};
+  for (const [key, value] of Object.entries(result)) {
+    if (ENUM_FIELDS.has(key)) {
+      out[key] = value;
+    } else if (value && typeof value === "object") {
+      out[key] = payloadEveryField(value, payload);
+    } else {
+      out[key] = payload;
+    }
+  }
+  return out;
+}
+
 function bootHud(url, html, chromeOpts = {}) {
   const env = createEnv({
     url,
@@ -193,14 +236,12 @@ describe("转义契约 / DOM 基线对比：外部字段不得改变渲染出的
       onRuntimeSendMessage: () =>
         Promise.resolve({
           ok: true,
-          result: modelResult({
-            model: PAYLOAD,
-            reason: PAYLOAD,
-            contentType: PAYLOAD,
-            contentTypeKey: PAYLOAD,
-            valueKey: PAYLOAD,
-            value: PAYLOAD
-          })
+          // 载荷清单**从结果对象的键自动生成** —— 不再手写。
+          //
+          // 手写清单的覆盖缺口与测试盲区一一对应：readingMinutes 此前就是这样
+          // 漏掉的（它被直接拼进 innerHTML，值里带 < 的内容会变成真实元素节点）。
+          // 每加一个字段都要记得手动补一次，是必然会漏的做法。
+          result: payloadEveryField(modelResult(), PAYLOAD)
         })
     });
     await waitModel(env);
