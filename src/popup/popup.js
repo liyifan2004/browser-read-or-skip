@@ -5,7 +5,13 @@
   let state = null;
   let currentHost = "";
 
-  init().catch(() => {});
+  // 启动失败必须给出可读原因。以前这里是 `init().catch(() => {})` ——
+  // 存储读失败时弹窗会永久停在「正在读取当前页面…」的转圈上，
+  // 一个字的原因都没有，用户只能猜扩展坏了，然后重装（重装会丢掉
+  // API Key 与全部设置）。HUD 侧早就改掉了这个反模式，弹窗这边对齐。
+  init().catch((e) => {
+    showUnsupported("扩展没能启动", "原因：" + (e && e.message ? e.message : e) + "。请重试；若持续失败，重装扩展会丢失设置，请先备份 API Key。");
+  });
 
   async function init() {
     const settings = await RS.storage.getSettings();
@@ -115,10 +121,10 @@
     $("vreason").textContent = r.reason || "";
 
     const rows = [
-      ["相关度", r.relevance],
-      ["新信息", r.novelty],
-      ["可信度", r.credibility],
-      ["时效性", r.timelessness]
+      [RS.METRIC_LABEL.relevance, r.relevance],
+      [RS.METRIC_LABEL.novelty, r.novelty],
+      [RS.METRIC_LABEL.credibility, r.credibility],
+      [RS.METRIC_LABEL.timelessness, r.timelessness]
     ].filter((x) => typeof x[1] === "number");
 
     if (rows.length) {
@@ -137,14 +143,20 @@
     if (r.warning === "redundant") chips.push('<span class="chip warn">⚠️ 可能没有太多新信息</span>');
     if (r.valueKey || r.value) {
       const k = r.valueKey || r.value;
-      chips.push('<span class="chip">阅读价值 <b>' + (RS.VALUE_LABEL[k] || "–") + "</b></span>");
+      // 与 hud.js 保持一致：查不到标签就回退到原文，而原文必须转义 ——
+      // valueKey 来自模型返回，缓存里的旧结果也可能带任意值。
+      chips.push('<span class="chip">阅读价值 <b>' + esc(RS.VALUE_LABEL[k] || "–") + "</b></span>");
     }
     if (r.contentType) {
       // 与 hud.js 的 chipsHTML 保持一致：查不到标签就回退到原文，
       // 而原文必须转义 —— contentType 来自模型返回，缓存里的旧版本结果也可能带任意值。
       chips.push('<span class="chip">' + esc(RS.CONTENT_TYPE_LABEL[r.contentType] || r.contentType) + "</span>");
     }
-    if (r.readingMinutes) chips.push('<span class="chip">约 <b>' + r.readingMinutes + "</b> 分钟</span>");
+    if (r.readingMinutes) {
+      // 与 hud.js 的 chips 保持一致：readingMinutes 必须转义 ——
+      // 它可能来自缓存里的旧结果，值里带 < 时会变成真实元素节点。
+      chips.push('<span class="chip">约 <b>' + esc(String(r.readingMinutes)) + "</b> 分钟</span>");
+    }
     if (r.lowConfidence) chips.push('<span class="chip warn">置信度偏低 ' + Math.round(r.confidence * 100) + "%</span>");
     if (chips.length) {
       $("chips").hidden = false;

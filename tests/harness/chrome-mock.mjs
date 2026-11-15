@@ -48,9 +48,13 @@ export function makeChrome(opts = {}) {
     storage: {
       local: {
         async get(keys) {
+          // 故障注入：让存储读抛错，用来验证「读失败时必须留下可读原因」。
+          if (opts.storageGetError) throw opts.storageGetError;
           return pick(keys);
         },
         async set(obj) {
+          // 故障注入：存储写失败（配额满、权限不足等）。
+          if (opts.storageSetError) throw opts.storageSetError;
           const changes = {};
           for (const k of Object.keys(obj || {})) {
             changes[k] = { oldValue: store[k], newValue: obj[k] };
@@ -60,6 +64,7 @@ export function makeChrome(opts = {}) {
           return undefined;
         },
         async remove(keys) {
+          if (opts.storageRemoveError) throw opts.storageRemoveError;
           const list = Array.isArray(keys) ? keys : [keys];
           const changes = {};
           for (const k of list) {

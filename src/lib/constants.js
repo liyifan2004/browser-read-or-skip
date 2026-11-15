@@ -45,6 +45,25 @@
 
   RS.VALUE_LABEL = { high: "高", medium: "中", low: "低" };
 
+  /**
+   * 指标名（相关度 / 新信息 / 可信度 / 时效性）。
+   *
+   * 此前 popup.js 与 hud.js 各自手写一份字符串字面量，两份实现之间没有任何
+   * 约束：把浮层里的「时效性」改成「保质期」，测试全绿，用户在浮层和弹窗
+   * 里看到同一个指标的两个名字。改为共用这一份，从结构上消除两份实现。
+   *
+   * key 与 result 的字段名一一对应；popup 与 hud 都从这里取，
+   * 见 tests/cases/19-metric-labels.test.mjs 的对等断言。
+   */
+  RS.METRIC_KEYS = ["relevance", "novelty", "credibility", "timelessness"];
+
+  RS.METRIC_LABEL = {
+    relevance: "相关度",
+    novelty: "新信息",
+    credibility: "可信度",
+    timelessness: "时效性"
+  };
+
   RS.CONTENT_TYPE_LABEL = {
     news: "资讯",
     tutorial: "教程",

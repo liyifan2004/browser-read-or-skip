@@ -195,9 +195,17 @@
 
   function setHint(text, cls) {
     const el = $("saveHint");
-    el.textContent = text;
+    // 提示区不得被写成空字符串：空提示等于「静默失败」——
+    // 用户看到一片空白，不知道发生了什么，只能猜扩展坏了，然后重装
+    // （重装会丢掉 API Key 与全部设置，代价极高）。
+    // 因此这里兜住空值：调用方传了空文本时退回一条可读的说明。
+    const msg = String(text == null ? "" : text).trim();
+    el.textContent = msg || "操作未完成，请重试。";
     el.className = "savehint" + (cls ? " " + cls : "");
   }
+  // 暴露出来供测试直接断言这条不变量：把提示区当成一个普通元素时，
+  // 「写入空串」这件事是看不见的。
+  RS.__setHint = setHint;
 
   /* ---------- 测试连接 ---------- */
 

@@ -34,9 +34,61 @@
 
   /* ---------------- 设置 ---------------- */
 
+  /**
+   * 把存下来的值整形成**当前版本期望的类型**。
+   *
+   * 为什么必须有这一步：`Object.assign({}, DEFAULT, saved)` 只能补齐
+   * **缺失**的字段，管不住**类型不对**的字段。老版本升级、或数据被外部
+   * 写坏时，`siteBlocklist` 可能是个字符串而不是数组 —— 设置页的
+   * `settings.siteBlocklist.join("\n")` 会直接抛 TypeError，整个设置页
+   * 打不开，用户唯一的出路是清扩展数据，那意味着 API Key 与全部设置丢失。
+   *
+   * 规则：类型不对就退回默认值，**绝不把脏数据往上抛**。
+   * 设置页必须永远打得开 —— 那是用户唯一的自救入口。
+   */
+  function coerceSettings(saved) {
+    const out = Object.assign({}, RS.DEFAULT_SETTINGS, saved);
+    const def = RS.DEFAULT_SETTINGS;
+
+    // 数组型字段：非数组一律退回默认
+    for (const key of ["topics", "siteBlocklist"]) {
+      if (!Array.isArray(out[key])) out[key] = Array.isArray(def[key]) ? def[key].slice() : [];
+      else out[key] = out[key].filter((x) => typeof x === "string");
+    }
+    // 数字型字段：非数字或 NaN 一律退回默认
+    for (const key of Object.keys(def)) {
+      if (typeof def[key] === "number" && typeof out[key] !== "number") {
+        out[key] = def[key];
+      } else if (typeof def[key] === "number" && !Number.isFinite(out[key])) {
+        out[key] = def[key];
+      }
+    }
+    // 布尔型字段：非布尔一律退回默认
+    for (const key of Object.keys(def)) {
+      if (typeof def[key] === "boolean" && typeof out[key] !== "boolean") {
+        out[key] = def[key];
+      }
+    }
+    // 字符串型字段：非字符串一律退回默认
+    for (const key of Object.keys(def)) {
+      if (typeof def[key] === "string" && typeof out[key] !== "string") {
+        out[key] = def[key];
+      }
+    }
+    // 对象型字段（如 pausedSites）：非对象一律退回默认
+    for (const key of Object.keys(def)) {
+      if (def[key] && typeof def[key] === "object" && !Array.isArray(def[key])) {
+        if (!out[key] || typeof out[key] !== "object" || Array.isArray(out[key])) {
+          out[key] = Object.assign({}, def[key]);
+        }
+      }
+    }
+    return out;
+  }
+
   async function getSettings() {
     const saved = (await rawGet(SK.SETTINGS)) || {};
-    const merged = Object.assign({}, RS.DEFAULT_SETTINGS, saved);
+    const merged = coerceSettings(saved);
     if (!merged.apiKey && RS.DEFAULT_CONFIG && RS.DEFAULT_CONFIG.apiKey) {
       merged.apiKey = RS.DEFAULT_CONFIG.apiKey;
     }
@@ -50,14 +102,14 @@
     const cur = (await rawGet(SK.SETTINGS)) || {};
     const next = Object.assign({}, cur, patch);
     await rawSet(SK.SETTINGS, next);
-    return Object.assign({}, RS.DEFAULT_SETTINGS, next);
+    return coerceSettings(next);
   }
 
   function onSettingsChanged(cb) {
     if (!hasStorage() || !chrome.storage.onChanged) return () => {};
     const handler = (changes, area) => {
       if (area === "local" && changes[SK.SETTINGS]) {
-        cb(Object.assign({}, RS.DEFAULT_SETTINGS, changes[SK.SETTINGS].newValue || {}));
+        cb(coerceSettings(changes[SK.SETTINGS].newValue || {}));
       }
     };
     chrome.storage.onChanged.addListener(handler);

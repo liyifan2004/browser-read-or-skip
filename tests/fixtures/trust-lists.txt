@@ -1,0 +1,71 @@
+# 可信度名单快照（2026-11-15）。
+#
+# TRUST_HIGH / TRUST_LOW 直接决定浮层给出的「可信度」分数：
+# 命中高可信名单给 88 分，未命中给 55 分 —— 差 33 分，可能直接翻转
+# 「值得认真读 / 可以跳过」。
+#
+# 原有测试只断言名单的**形态**（全小写、无空格），挡不住「删掉一个域名」。
+# 46 个域名里只有 3 个被 fixture 引用过，其余 43 个零覆盖。
+#
+# 规则：本文件里的每一条都必须在 constants.js 的对应名单里。
+# 删除名单条目必须同时改本文件 —— 让改动留痕。
+
+## TRUST_HIGH
+arxiv.org
+nature.com
+science.org
+acm.org
+ieee.org
+nih.gov
+who.int
+developer.mozilla.org
+docs.python.org
+developer.chrome.com
+nodejs.org
+react.dev
+kubernetes.io
+rust-lang.org
+go.dev
+kernel.org
+w3.org
+ietf.org
+github.com
+gitlab.com
+stackoverflow.com
+wikipedia.org
+wikimedia.org
+openai.com
+anthropic.com
+deepmind.google
+research.google
+microsoft.com
+apple.com
+cloudflare.com
+vercel.com
+typesafe.ai
+huggingface.co
+pytorch.org
+tensorflow.org
+npmjs.com
+pypi.org
+docs.rs
+spring.io
+postgresql.org
+gov.cn
+edu.cn
+
+## TRUST_LOW
+baijiahao.baidu.com
+toutiao.com
+mini.eastday.com
+kuai.media
+sohu.com/a/
+163.com/dy
+qq.com/cmsid
+zhidao.baidu.com
+answers.yahoo.com
+quora.com
+medium.com/@
+substack.com
+blog.csdn.net
+juejin.cn/post

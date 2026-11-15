@@ -560,10 +560,10 @@
       '<div class="scale"><span class="scalefill" style="width:' + pctNum.toFixed(1) + '%"></span></div>' +
       warnHTML(r) +
       '<div class="metrics">' +
-        metric("相关度", r.relevance, r.source === "heuristic") +
-        metric("新信息", r.novelty, r.source === "heuristic") +
-        metric("可信度", r.credibility, r.source === "heuristic") +
-        metric("时效性", r.timelessness, r.source === "heuristic") +
+        metric(RS.METRIC_LABEL.relevance, r.relevance, r.source === "heuristic") +
+        metric(RS.METRIC_LABEL.novelty, r.novelty, r.source === "heuristic") +
+        metric(RS.METRIC_LABEL.credibility, r.credibility, r.source === "heuristic") +
+        metric(RS.METRIC_LABEL.timelessness, r.timelessness, r.source === "heuristic") +
       "</div>" +
       chipsHTML(r) +
       pauseMenuHTML() +
@@ -672,7 +672,11 @@
       out.push('<span class="chip">' + esc(RS.CONTENT_TYPE_LABEL[r.contentType] || r.contentType) + "</span>");
     }
     if (r.readingMinutes) {
-      out.push('<span class="chip">约 <b>' + r.readingMinutes + "</b> 分钟</span>");
+      // 必须转义：readingMinutes 来自 result，而 result 可能来自**缓存**
+      // （rs.cache 里的旧条目不做字段白名单校验）。此前此处直接拼接，
+      // 值里带 < 的内容会变成真实元素节点 —— 扩展注入到用户页面里的
+      // 真实 XSS 通道。
+      out.push('<span class="chip">约 <b>' + esc(String(r.readingMinutes)) + "</b> 分钟</span>");
     }
     if (r.kind === "serp") {
       out.push('<span class="chip">结果页预判</span>');
